@@ -1,1 +1,25 @@
 @import "tailwindcss";
+
+@keyframes list-refresh-flash {
+  0%, 100% {
+    opacity: 1;
+  }
+
+  35% {
+    opacity: 0.25;
+  }
+
+  65% {
+    opacity: 0.7;
+  }
+}
+
+.list-refresh-flash {
+  animation: list-refresh-flash 500ms ease-in-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .list-refresh-flash {
+    animation: none;
+  }
+}
