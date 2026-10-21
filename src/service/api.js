@@ -71,9 +71,27 @@ export function deleteAnalysisReport(reportId) {
   });
 }
 
-// Ask a question against the indexed source code of a repository.
-export function chatWithRepository(repositoryId, question) {
-  return request(`/api/repositories/${repositoryId}/chat`, {
+// Fetch chat history for a repository.
+export function listRepositoryChats(repositoryId) {
+  return request(`/api/repositories/${repositoryId}/chats`);
+}
+
+// Create a chat and optionally submit its first question.
+export function createRepositoryChat(repositoryId, question = "") {
+  return request(`/api/repositories/${repositoryId}/chats`, {
+    method: "POST",
+    body: JSON.stringify({ question }),
+  });
+}
+
+// Fetch messages from a chat.
+export function getChatMessages(chatId) {
+  return request(`/api/chats/${chatId}/messages`);
+}
+
+// Submit a question to an existing chat.
+export function sendChatMessage(chatId, question) {
+  return request(`/api/chats/${chatId}/messages`, {
     method: "POST",
     body: JSON.stringify({ question }),
   });

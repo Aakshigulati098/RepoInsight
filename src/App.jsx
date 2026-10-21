@@ -6,7 +6,6 @@ import {
   Sparkles,
   X,
   Trash2,
-  MessageCircle,
 } from 'lucide-react';
 
 import { useEffect, useState, useCallback } from 'react';
@@ -19,12 +18,12 @@ import {
   getAnalysisReports,
   getAnalysisReport,
   deleteAnalysisReport,
-  chatWithRepository,
 } from './service/api.js';
 
 import AnalysisReportModal from './features/analysis/AnalysisReportModal';
 import AnalysisReportsList from './features/analysis/AnalysisReportsList';
 import RepositoryList from './features/repositories/RepositoryList';
+import RepositoryChatModal from './components/RepositoryChatModel.jsx';
 
 function StatCard({ icon, label, value, note }) {
   return (
@@ -56,10 +55,6 @@ function App() {
 
   const [analyzingId, setAnalyzingId] = useState(null);
   const [chatRepository, setChatRepository] = useState(null);
-  const [chatQuestion, setChatQuestion] = useState('');
-  const [chatAnswer, setChatAnswer] = useState(null);
-  const [chatSources, setChatSources] = useState([]);
-  const [chatLoading, setChatLoading] = useState(false);
   const [selectedReport, setSelectedReport] = useState(null);
   const [reportLoadingId, setReportLoadingId] = useState(null);
   const [deletingReportId, setDeletingReportId] = useState(null);
@@ -225,29 +220,8 @@ useEffect(() => {
 
   function openRepositoryChat(repository) {
     setChatRepository(repository);
-    setChatQuestion('');
-    setChatAnswer(null);
-    setChatSources([]);
     setError('');
     setMessage('');
-  }
-
-  async function handleRepositoryChat(event) {
-    event.preventDefault();
-    if (!chatRepository || !chatQuestion.trim()) return;
-    setChatLoading(true);
-    setError('');
-    setChatAnswer(null);
-    setChatSources([]);
-    try {
-      const result = await chatWithRepository(chatRepository.id, chatQuestion.trim());
-      setChatAnswer(result?.answer ?? result?.response ?? result?.message ?? 'The API returned no answer.');
-      setChatSources(Array.isArray(result?.sources) ? result.sources : []);
-    } catch (err) {
-      setError(err.message || 'Unable to ask a question about this repository.');
-    } finally {
-      setChatLoading(false);
-    }
   }
 
   // Fetch the complete report before opening its modal.
@@ -585,27 +559,12 @@ useEffect(() => {
         </div>
       </main>
 
-      {/* Repository code Q&A modal */}
+      {/* Repository code Q&A workspace */}
       {chatRepository && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={() => !chatLoading && setChatRepository(null)}>
-          <section role="dialog" aria-modal="true" aria-labelledby="repository-chat-title" onClick={(event) => event.stopPropagation()} className="w-full max-w-2xl rounded-2xl border border-slate-700 bg-[#111b2e] p-6 shadow-2xl">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-2 text-cyan-300"><MessageCircle size={19} /><span className="text-xs font-semibold uppercase tracking-wider">Repository Q&A</span></div>
-                <h3 id="repository-chat-title" className="mt-2 text-lg font-semibold">Ask {chatRepository.name}</h3>
-                <p className="mt-1 text-sm text-slate-400">Ask questions about this repository's source code.</p>
-              </div>
-              <button type="button" onClick={() => setChatRepository(null)} disabled={chatLoading} aria-label="Close repository Q&A" className="text-slate-400 hover:text-white disabled:opacity-50"><X size={20} /></button>
-            </div>
-            <form onSubmit={handleRepositoryChat} className="mt-5 space-y-3">
-              <textarea value={chatQuestion} onChange={(event) => setChatQuestion(event.target.value)} required rows={3} maxLength={1500} placeholder="e.g. Where is authentication handled, and how does the request flow work?" className="w-full resize-y rounded-lg border border-slate-700 bg-[#0b1120] px-4 py-3 text-sm outline-none focus:border-cyan-400" />
-              <div className="flex justify-end">
-                <button type="submit" disabled={chatLoading || !chatQuestion.trim()} className="flex items-center gap-2 rounded-lg bg-cyan-300 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-50"><MessageCircle size={15} />{chatLoading ? 'Thinking...' : 'Ask question'}</button>
-              </div>
-            </form>
-            {chatAnswer && <div className="mt-5 max-h-[40vh] overflow-y-auto rounded-xl border border-slate-700 bg-[#0b1120] p-4"><h4 className="mb-2 text-sm font-semibold text-emerald-300">Answer</h4><p className="whitespace-pre-wrap text-sm leading-6 text-slate-200">{chatAnswer}</p>{chatSources.length > 0 && <div className="mt-4 border-t border-slate-800 pt-3"><h5 className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">Sources</h5><ul className="space-y-1">{chatSources.map((source, index) => { const label = typeof source === 'string' ? source : source?.filePath ?? source?.metadata?.filePath ?? source?.content ?? `Source ${index + 1}`; return <li key={`${label}-${index}`} className="break-all text-xs text-cyan-200">{label}</li>; })}</ul></div>}</div>}
-          </section>
-        </div>
+        <RepositoryChatModal
+          repository={chatRepository}
+          onClose={() => setChatRepository(null)}
+        />
       )}
 
       {/* Import repository modal */}
