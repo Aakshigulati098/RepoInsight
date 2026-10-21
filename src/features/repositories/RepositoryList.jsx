@@ -5,6 +5,8 @@ import {
   Star,
   Sparkles,
   GitBranch,
+  Trash2,
+  MessageCircle,
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -13,7 +15,10 @@ export default function RepositoryList({
   loading,
   importing,
   analyzingId,
+  deletingRepositoryId,
   onAnalyze,
+  onChat,
+  onDelete,
   onRefresh,
 }) {
   const [refreshAnimation, setRefreshAnimation] = useState(0);
@@ -115,8 +120,21 @@ export default function RepositoryList({
 
                   <button
                     type="button"
+                    onClick={() => onChat(repo)}
+                    disabled={importing || analyzingId !== null || deletingRepositoryId !== null}
+                    className="flex items-center gap-1.5 rounded-full border border-slate-700 px-3 py-1.5 text-slate-300 hover:border-cyan-400 hover:text-cyan-300 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <MessageCircle size={13} />
+                    Ask code
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => onAnalyze(repo.id)}
-                    disabled={importing || analyzingId !== null}
+                    disabled={
+                      importing ||
+                      analyzingId !== null ||
+                      deletingRepositoryId !== null
+                    }
                     className="ml-auto rounded-full bg-emerald-400/10 px-3 py-1.5 text-emerald-300 hover:bg-emerald-400/20 disabled:opacity-50"
                   >
                     <span className="flex items-center gap-1.5">
@@ -125,6 +143,22 @@ export default function RepositoryList({
                         ? 'Analyzing...'
                         : 'Analyze'}
                     </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onDelete(repo.id, repo.name)}
+                    disabled={
+                      importing ||
+                      analyzingId !== null ||
+                      deletingRepositoryId !== null
+                    }
+                    aria-label={`Delete repository ${repo.name}`}
+                    className="flex items-center gap-1.5 rounded-full border border-red-500/30 px-3 py-1.5 text-red-300 hover:border-red-400 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Trash2 size={13} />
+                    {deletingRepositoryId === repo.id
+                      ? 'Deleting...'
+                      : 'Delete'}
                   </button>
                 </div>
               </article>

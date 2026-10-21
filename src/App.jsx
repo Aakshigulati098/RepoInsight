@@ -5,6 +5,8 @@ import {
   Activity,
   Sparkles,
   X,
+  Trash2,
+  MessageCircle,
 } from 'lucide-react';
 
 import { useEffect, useState, useCallback } from 'react';
@@ -12,9 +14,12 @@ import { useEffect, useState, useCallback } from 'react';
 import {
   getRepositories,
   importRepository,
+  deleteRepository,
   analyzeRepository,
   getAnalysisReports,
   getAnalysisReport,
+  deleteAnalysisReport,
+  chatWithRepository,
 } from './service/api.js';
 
 import AnalysisReportModal from './features/analysis/AnalysisReportModal';
@@ -50,8 +55,16 @@ function App() {
   const [importing, setImporting] = useState(false);
 
   const [analyzingId, setAnalyzingId] = useState(null);
+  const [chatRepository, setChatRepository] = useState(null);
+  const [chatQuestion, setChatQuestion] = useState('');
+  const [chatAnswer, setChatAnswer] = useState(null);
+  const [chatSources, setChatSources] = useState([]);
+  const [chatLoading, setChatLoading] = useState(false);
   const [selectedReport, setSelectedReport] = useState(null);
   const [reportLoadingId, setReportLoadingId] = useState(null);
+  const [deletingReportId, setDeletingReportId] = useState(null);
+  const [deletingRepositoryId, setDeletingRepositoryId] = useState(null);
+  const [pendingDeletion, setPendingDeletion] = useState(null);
 
   // Load repositories from the backend.
   const loadRepositories = useCallback(async () => {
@@ -90,6 +103,70 @@ function App() {
     loadAnalysisReports();
   }, [loadRepositories, loadAnalysisReports]);
 
+
+  useEffect(() => {
+    const hasActiveReports = analysisReports.some((report) => {
+      const status = String(report.status ?? '').toUpperCase();
+
+      return status === 'PENDING' || status === 'IN_PROGRESS';
+    });
+
+    if (!hasActiveReports) {
+      return;
+    }
+
+    const intervalId = setInterval(() => {
+      loadAnalysisReports();
+    }, 3000);
+
+    return () => clearInterval(intervalId);
+  }, [analysisReports, loadAnalysisReports]);
+
+
+useEffect(() => {
+  if (!selectedReport) return;
+
+  const status = String(selectedReport.status ?? '').toUpperCase();
+
+  if (status !== 'PENDING' && status !== 'IN_PROGRESS') {
+    return;
+  }
+
+  const reportId =
+    selectedReport.id ??
+    selectedReport.reportId ??
+    selectedReport.analysisId;
+
+  if (reportId == null) return;
+
+  let cancelled = false;
+
+  const refreshSelectedReport = async () => {
+    try {
+      const updatedReport = await getAnalysisReport(reportId);
+
+      if (cancelled) return;
+
+      setSelectedReport(updatedReport);
+
+      setAnalysisReports((reports) =>
+        reports.map((report) => {
+          const id = report.id ?? report.reportId ?? report.analysisId;
+          return id === reportId ? updatedReport : report;
+        })
+      );
+    } catch (err) {
+      console.error('Unable to refresh analysis report:', err);
+    }
+  };
+
+  const intervalId = setInterval(refreshSelectedReport, 3000);
+
+  return () => {
+    cancelled = true;
+    clearInterval(intervalId);
+  };
+}, [selectedReport]);
 
   // Import a public GitHub repository.
   async function handleImport(event) {
@@ -131,14 +208,45 @@ function App() {
     setMessage('');
 
     try {
-      await analyzeRepository(repositoryId);
+      const report = await analyzeRepository(repositoryId);
+
       await loadAnalysisReports();
 
-      setMessage('AI analysis completed successfully.');
+      setMessage(
+        `Analysis queued successfully${report?.id ? ` (Report #${report.id})` : ''
+        }. Tracking its progress in AI Analysis.`
+      );
     } catch (err) {
-      setError(err.message || 'Analysis failed.');
+      setError(err.message || 'Unable to start analysis.');
     } finally {
       setAnalyzingId(null);
+    }
+  }
+
+  function openRepositoryChat(repository) {
+    setChatRepository(repository);
+    setChatQuestion('');
+    setChatAnswer(null);
+    setChatSources([]);
+    setError('');
+    setMessage('');
+  }
+
+  async function handleRepositoryChat(event) {
+    event.preventDefault();
+    if (!chatRepository || !chatQuestion.trim()) return;
+    setChatLoading(true);
+    setError('');
+    setChatAnswer(null);
+    setChatSources([]);
+    try {
+      const result = await chatWithRepository(chatRepository.id, chatQuestion.trim());
+      setChatAnswer(result?.answer ?? result?.response ?? result?.message ?? 'The API returned no answer.');
+      setChatSources(Array.isArray(result?.sources) ? result.sources : []);
+    } catch (err) {
+      setError(err.message || 'Unable to ask a question about this repository.');
+    } finally {
+      setChatLoading(false);
     }
   }
 
@@ -159,6 +267,89 @@ function App() {
       setError(err.message || 'Unable to load analysis report.');
     } finally {
       setReportLoadingId(null);
+    }
+  }
+
+  function handleDeleteReport(reportId, repositoryName) {
+    if (reportId == null) {
+      setError('This report does not have a valid ID.');
+      return;
+    }
+
+    setPendingDeletion({
+      type: 'analysis',
+      id: reportId,
+      label: repositoryName || `report #${reportId}`,
+    });
+  }
+
+  function handleDeleteRepository(repositoryId, repositoryName) {
+    if (repositoryId == null) {
+      setError('This repository does not have a valid ID.');
+      return;
+    }
+
+    setPendingDeletion({
+      type: 'repository',
+      id: repositoryId,
+      label: repositoryName || `repository #${repositoryId}`,
+    });
+  }
+
+  async function confirmDeletion() {
+    if (!pendingDeletion) return;
+
+    const { type, id, label } = pendingDeletion;
+    if (type === 'analysis') {
+      setDeletingReportId(id);
+    } else {
+      setDeletingRepositoryId(id);
+    }
+    setError('');
+    setMessage('');
+
+    try {
+      if (type === 'analysis') {
+        await deleteAnalysisReport(id);
+        setAnalysisReports((reports) =>
+          reports.filter(
+            (report) =>
+              (report.id ?? report.reportId ?? report.analysisId) !== id
+          )
+        );
+        if (
+          selectedReport?.id === id ||
+          selectedReport?.reportId === id ||
+          selectedReport?.analysisId === id
+        ) {
+          setSelectedReport(null);
+        }
+      } else {
+        await deleteRepository(id);
+        setRepositories((items) =>
+          items.filter((repository) => repository.id !== id)
+        );
+      }
+      setPendingDeletion(null);
+      setMessage(
+        type === 'analysis'
+          ? `Deleted analysis for ${label}.`
+          : `Deleted ${label}.`
+      );
+    } catch (err) {
+      setError(
+        err.message ||
+        (type === 'analysis'
+          ? 'Unable to delete analysis report.'
+          : 'Unable to delete repository.')
+      );
+      setPendingDeletion(null);
+    } finally {
+      if (type === 'analysis') {
+        setDeletingReportId(null);
+      } else {
+        setDeletingRepositoryId(null);
+      }
     }
   }
 
@@ -369,8 +560,10 @@ function App() {
             reports={analysisReports}
             loading={reportsLoading}
             reportLoadingId={reportLoadingId}
+            deletingReportId={deletingReportId}
             onRefresh={loadAnalysisReports}
             onViewReport={handleViewReport}
+            onDeleteReport={handleDeleteReport}
           />
 
           {/* Repository list */}
@@ -379,7 +572,10 @@ function App() {
             loading={loading}
             importing={importing}
             analyzingId={analyzingId}
+            deletingRepositoryId={deletingRepositoryId}
             onAnalyze={handleAnalyze}
+            onChat={openRepositoryChat}
+            onDelete={handleDeleteRepository}
             onRefresh={loadRepositories}
           />
 
@@ -388,6 +584,29 @@ function App() {
           </p>
         </div>
       </main>
+
+      {/* Repository code Q&A modal */}
+      {chatRepository && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={() => !chatLoading && setChatRepository(null)}>
+          <section role="dialog" aria-modal="true" aria-labelledby="repository-chat-title" onClick={(event) => event.stopPropagation()} className="w-full max-w-2xl rounded-2xl border border-slate-700 bg-[#111b2e] p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2 text-cyan-300"><MessageCircle size={19} /><span className="text-xs font-semibold uppercase tracking-wider">Repository Q&A</span></div>
+                <h3 id="repository-chat-title" className="mt-2 text-lg font-semibold">Ask {chatRepository.name}</h3>
+                <p className="mt-1 text-sm text-slate-400">Ask questions about this repository's source code.</p>
+              </div>
+              <button type="button" onClick={() => setChatRepository(null)} disabled={chatLoading} aria-label="Close repository Q&A" className="text-slate-400 hover:text-white disabled:opacity-50"><X size={20} /></button>
+            </div>
+            <form onSubmit={handleRepositoryChat} className="mt-5 space-y-3">
+              <textarea value={chatQuestion} onChange={(event) => setChatQuestion(event.target.value)} required rows={3} maxLength={1500} placeholder="e.g. Where is authentication handled, and how does the request flow work?" className="w-full resize-y rounded-lg border border-slate-700 bg-[#0b1120] px-4 py-3 text-sm outline-none focus:border-cyan-400" />
+              <div className="flex justify-end">
+                <button type="submit" disabled={chatLoading || !chatQuestion.trim()} className="flex items-center gap-2 rounded-lg bg-cyan-300 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-50"><MessageCircle size={15} />{chatLoading ? 'Thinking...' : 'Ask question'}</button>
+              </div>
+            </form>
+            {chatAnswer && <div className="mt-5 max-h-[40vh] overflow-y-auto rounded-xl border border-slate-700 bg-[#0b1120] p-4"><h4 className="mb-2 text-sm font-semibold text-emerald-300">Answer</h4><p className="whitespace-pre-wrap text-sm leading-6 text-slate-200">{chatAnswer}</p>{chatSources.length > 0 && <div className="mt-4 border-t border-slate-800 pt-3"><h5 className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">Sources</h5><ul className="space-y-1">{chatSources.map((source, index) => { const label = typeof source === 'string' ? source : source?.filePath ?? source?.metadata?.filePath ?? source?.content ?? `Source ${index + 1}`; return <li key={`${label}-${index}`} className="break-all text-xs text-cyan-200">{label}</li>; })}</ul></div>}</div>}
+          </section>
+        </div>
+      )}
 
       {/* Import repository modal */}
       {modalOpen && (
@@ -446,6 +665,77 @@ function App() {
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {pendingDeletion && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+          onClick={() => {
+            if (deletingReportId === null && deletingRepositoryId === null) {
+              setPendingDeletion(null);
+            }
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-report-title"
+            aria-describedby="delete-report-description"
+            onClick={(event) => event.stopPropagation()}
+            className="w-full max-w-md rounded-2xl border border-slate-700 bg-[#111b2e] p-6 shadow-2xl"
+          >
+            <div className="flex items-start gap-4">
+              <div className="rounded-xl bg-red-500/10 p-3 text-red-300">
+                <Trash2 size={22} />
+              </div>
+              <div>
+                <h3 id="delete-report-title" className="text-lg font-semibold">
+                  {pendingDeletion.type === 'analysis'
+                    ? 'Delete analysis report?'
+                    : 'Delete repository?'}
+                </h3>
+                <p
+                  id="delete-report-description"
+                  className="mt-2 text-sm text-slate-400"
+                >
+                  Are you sure you want to delete{' '}
+                  <span className="font-medium text-slate-200">
+                    {pendingDeletion.label}
+                  </span>
+                  ? This action cannot be undone.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setPendingDeletion(null)}
+                disabled={
+                  deletingReportId !== null ||
+                  deletingRepositoryId !== null
+                }
+                className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                No, keep it
+              </button>
+              <button
+                type="button"
+                onClick={confirmDeletion}
+                disabled={
+                  deletingReportId !== null ||
+                  deletingRepositoryId !== null
+                }
+                className="flex items-center gap-2 rounded-lg bg-red-500 px-4 py-2 text-sm font-semibold text-white hover:bg-red-400 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Trash2 size={15} />
+                {deletingReportId !== null || deletingRepositoryId !== null
+                  ? 'Deleting...'
+                  : 'Yes, delete'}
+              </button>
+            </div>
+          </section>
         </div>
       )}
 
