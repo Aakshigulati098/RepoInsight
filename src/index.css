@@ -18,8 +18,30 @@
   animation: list-refresh-flash 500ms ease-in-out;
 }
 
+@keyframes indexing-progress {
+  from {
+    transform: translateX(-100%);
+  }
+
+  to {
+    transform: translateX(300%);
+  }
+}
+
+.indexing-progress-indeterminate {
+  width: 35%;
+  animation: indexing-progress 1.4s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .list-refresh-flash {
     animation: none;
+  }
+
+  .indexing-progress-indeterminate {
+    animation: none;
+    transform: none;
+    width: 100%;
+    opacity: 0.5;
   }
 }

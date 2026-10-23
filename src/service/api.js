@@ -96,3 +96,16 @@ export function sendChatMessage(chatId, question) {
     body: JSON.stringify({ question }),
   });
 }
+
+
+// Start repository indexing in the background (HTTP 202 Accepted).
+export function startRepositoryIndexing(repositoryId) {
+  return request(`/api/repositories/${repositoryId}/index`, {
+    method: "POST",
+  });
+}
+
+// Read the persisted indexing status for a repository.
+export function getRepositoryIndexingStatus(repositoryId) {
+  return request(`/api/repositories/${repositoryId}/index/status`);
+}

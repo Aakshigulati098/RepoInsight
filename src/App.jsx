@@ -18,6 +18,8 @@ import {
   getAnalysisReports,
   getAnalysisReport,
   deleteAnalysisReport,
+  startRepositoryIndexing,
+  getRepositoryIndexingStatus,
 } from './service/api.js';
 
 import AnalysisReportModal from './features/analysis/AnalysisReportModal';
@@ -60,6 +62,8 @@ function App() {
   const [deletingReportId, setDeletingReportId] = useState(null);
   const [deletingRepositoryId, setDeletingRepositoryId] = useState(null);
   const [pendingDeletion, setPendingDeletion] = useState(null);
+  const [indexingStatuses, setIndexingStatuses] = useState({});
+  const [indexingId, setIndexingId] = useState(null);
 
   // Load repositories from the backend.
   const loadRepositories = useCallback(async () => {
@@ -73,6 +77,90 @@ function App() {
     }
   }, []);
 
+
+  // Load the saved indexing status for each repository.
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadStatuses() {
+      const results = await Promise.all(
+        repositories.map(async (repository) => {
+          try {
+            const status = await getRepositoryIndexingStatus(repository.id);
+            return [repository.id, status];
+          } catch (err) {
+            // Keep the dashboard usable if a repository has never been indexed
+            // or its status endpoint is temporarily unavailable.
+            return [repository.id, null];
+          }
+        })
+      );
+
+      if (cancelled) return;
+      setIndexingStatuses((current) => {
+        const next = { ...current };
+        for (const [id, status] of results) {
+          if (status) next[id] = status;
+          else if (!(id in next)) next[id] = { status: 'NOT_INDEXED', progress: 0, chunksIndexed: 0 };
+        }
+        return next;
+      });
+    }
+
+    if (repositories.length) loadStatuses();
+    return () => { cancelled = true; };
+  }, [repositories]);
+
+  // Poll only repositories that are actively indexing.
+  useEffect(() => {
+    const activeIds = Object.entries(indexingStatuses)
+      .filter(([, value]) => ['PENDING', 'IN_PROGRESS'].includes(String(value?.status || '').toUpperCase()))
+      .map(([id]) => id);
+
+    if (!activeIds.length) return;
+
+    let cancelled = false;
+    const refreshStatuses = async () => {
+      const results = await Promise.all(activeIds.map(async (id) => {
+        try { return [id, await getRepositoryIndexingStatus(id)]; }
+        catch { return [id, null]; }
+      }));
+      if (cancelled) return;
+      setIndexingStatuses((current) => {
+        const next = { ...current };
+        for (const [id, status] of results) if (status) next[id] = status;
+        return next;
+      });
+    };
+
+    const intervalId = setInterval(refreshStatuses, 2000);
+    return () => { cancelled = true; clearInterval(intervalId); };
+  }, [indexingStatuses]);
+
+  async function handleIndexRepository(repositoryId) {
+    setIndexingId(repositoryId);
+    setError('');
+    setMessage('');
+    setIndexingStatuses((current) => ({
+      ...current,
+      [repositoryId]: { status: 'IN_PROGRESS', progress: 0, chunksIndexed: 0, error: null },
+    }));
+
+    try {
+      await startRepositoryIndexing(repositoryId);
+      const status = await getRepositoryIndexingStatus(repositoryId);
+      setIndexingStatuses((current) => ({ ...current, [repositoryId]: status }));
+      setMessage('Repository indexing started. Its status will update automatically.');
+    } catch (err) {
+      setIndexingStatuses((current) => ({
+        ...current,
+        [repositoryId]: { status: 'FAILED', progress: 0, error: err.message || 'Unable to start indexing.' },
+      }));
+      setError(err.message || 'Unable to start repository indexing.');
+    } finally {
+      setIndexingId(null);
+    }
+  }
 
   // Load saved AI analysis reports.
   const loadAnalysisReports = useCallback(async () => {
@@ -547,6 +635,9 @@ useEffect(() => {
             importing={importing}
             analyzingId={analyzingId}
             deletingRepositoryId={deletingRepositoryId}
+            indexingStatuses={indexingStatuses}
+            indexingId={indexingId}
+            onIndex={handleIndexRepository}
             onAnalyze={handleAnalyze}
             onChat={openRepositoryChat}
             onDelete={handleDeleteRepository}

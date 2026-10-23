@@ -7,6 +7,8 @@ import {
   GitBranch,
   Trash2,
   MessageCircle,
+  Database,
+  LoaderCircle,
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -16,6 +18,9 @@ export default function RepositoryList({
   importing,
   analyzingId,
   deletingRepositoryId,
+  indexingStatuses = {},
+  indexingId = null,
+  onIndex,
   onAnalyze,
   onChat,
   onDelete,
@@ -105,6 +110,47 @@ export default function RepositoryList({
                   {repo.description || 'No description available.'}
                 </p>
 
+                {(() => {
+                  const indexing = indexingStatuses[repo.id] || {};
+                  const status = String(indexing.status || 'NOT_INDEXED').toUpperCase();
+                  const progress = Math.max(0, Math.min(100, Number(indexing.progress || 0)));
+                  const active = status === 'IN_PROGRESS' || status === 'PENDING';
+                  const statusClass = status === 'COMPLETED'
+                    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                    : status === 'FAILED'
+                      ? 'border-red-500/30 bg-red-500/10 text-red-300'
+                      : active
+                        ? 'border-amber-500/30 bg-amber-500/10 text-amber-300'
+                        : 'border-slate-700 bg-slate-800/60 text-slate-400';
+
+                  return (
+                    <div className="mb-4 rounded-lg border border-slate-800 bg-[#0b1424] p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="flex items-center gap-2 text-sm text-slate-300">
+                          <Database size={15} className="text-emerald-300" />
+                          Code indexing
+                        </span>
+                        <span className={`rounded-full border px-2.5 py-1 text-[11px] font-medium ${statusClass}`}>
+                          {status.replaceAll('_', ' ')}
+                        </span>
+                      </div>
+                      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-800">
+                        <div
+                          className={`h-full rounded-full transition-all duration-500 ${status === 'FAILED' ? 'bg-red-400' : 'bg-emerald-400'}`}
+                          style={{ width: `${status === 'COMPLETED' ? 100 : progress}%` }}
+                        />
+                      </div>
+                      <div className="mt-2 flex items-center justify-between gap-3 text-xs text-slate-500">
+                        <span>{indexing.error ? indexing.error : active ? 'Indexing in the background…' : status === 'COMPLETED' ? 'Ready for code Q&A' : 'Index the source code to enable code Q&A'}</span>
+                        <span className="shrink-0">{status === 'COMPLETED' ? 100 : progress}%</span>
+                      </div>
+                      {status === 'COMPLETED' && indexing.chunksIndexed != null && (
+                        <p className="mt-1 text-xs text-slate-500">{indexing.chunksIndexed} chunks indexed</p>
+                      )}
+                    </div>
+                  );
+                })()}
+
                 <div className="flex flex-wrap items-center gap-4 border-t border-slate-800 pt-4 text-xs text-slate-400">
                   <span className="flex items-center gap-1.5">
                     <span className="h-2 w-2 rounded-full bg-orange-300" />
@@ -117,6 +163,18 @@ export default function RepositoryList({
                       ? 'N/A'
                       : Number(repo.stars).toLocaleString()}
                   </span>
+
+                  <button
+                    type="button"
+                    onClick={() => onIndex(repo.id)}
+                    disabled={importing || indexingId !== null || indexingStatuses[repo.id]?.status === 'IN_PROGRESS' || indexingStatuses[repo.id]?.status === 'PENDING' || analyzingId !== null || deletingRepositoryId !== null}
+                    className="flex items-center gap-1.5 rounded-full border border-emerald-500/30 px-3 py-1.5 text-emerald-300 hover:bg-emerald-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {indexingId === repo.id || ['IN_PROGRESS', 'PENDING'].includes(String(indexingStatuses[repo.id]?.status || '').toUpperCase())
+                      ? <LoaderCircle size={13} className="animate-spin" />
+                      : <Database size={13} />}
+                    {indexingId === repo.id || ['IN_PROGRESS', 'PENDING'].includes(String(indexingStatuses[repo.id]?.status || '').toUpperCase()) ? 'Indexing…' : 'Index code'}
+                  </button>
 
                   <button
                     type="button"
