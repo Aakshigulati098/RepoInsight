@@ -38,6 +38,61 @@ function formatDate(value) {
     : 'Recently';
 }
 
+
+function renderInlineMarkdown(text) {
+  const tokens = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g);
+  return tokens.map((token, index) => {
+    if (token.startsWith('**') && token.endsWith('**')) {
+      return <strong key={index}>{token.slice(2, -2)}</strong>;
+    }
+    if (token.startsWith('`') && token.endsWith('`')) {
+      return <code key={index} className="rounded bg-slate-800 px-1 py-0.5 font-mono text-[0.9em] text-emerald-200">{token.slice(1, -1)}</code>;
+    }
+    return token;
+  });
+}
+
+function renderMessageMarkdown(content) {
+  const lines = String(content ?? '').split(/\r?\n/);
+  const blocks = [];
+  let listItems = [];
+
+  const flushList = () => {
+    if (listItems.length) {
+      blocks.push(
+        <ul key={`list-${blocks.length}`} className="my-2 list-disc space-y-1 pl-5">
+          {listItems.map((item, index) => <li key={index}>{renderInlineMarkdown(item)}</li>)}
+        </ul>
+      );
+      listItems = [];
+    }
+  };
+
+  lines.forEach((line, index) => {
+    const trimmed = line.trim();
+    const bullet = trimmed.match(/^[-*]\s+(.+)$/);
+    if (bullet) {
+      listItems.push(bullet[1]);
+      return;
+    }
+
+    flushList();
+    if (!trimmed) {
+      blocks.push(<div key={`space-${index}`} className="h-2" />);
+    } else if (trimmed.startsWith('### ')) {
+      blocks.push(<h4 key={index} className="mt-3 font-semibold text-slate-100">{renderInlineMarkdown(trimmed.slice(4))}</h4>);
+    } else if (trimmed.startsWith('## ')) {
+      blocks.push(<h3 key={index} className="mt-3 font-semibold text-slate-100">{renderInlineMarkdown(trimmed.slice(3))}</h3>);
+    } else if (trimmed.startsWith('# ')) {
+      blocks.push(<h3 key={index} className="mt-3 text-base font-semibold text-slate-100">{renderInlineMarkdown(trimmed.slice(2))}</h3>);
+    } else {
+      blocks.push(<p key={index} className="my-1">{renderInlineMarkdown(trimmed)}</p>);
+    }
+  });
+  flushList();
+  return blocks;
+}
+
 function ChatMessage({ message }) {
   const isUser = message.role === 'user';
   const sources = Array.isArray(message.sources) ? message.sources : [];
@@ -53,13 +108,13 @@ function ChatMessage({ message }) {
         <div className={`mb-1 text-[11px] font-semibold uppercase tracking-wider ${isUser ? 'text-slate-800/70' : 'text-emerald-300'}`}>
           {isUser ? 'You' : 'RepoInsight AI'}
         </div>
-        <p className="whitespace-pre-wrap break-words text-sm leading-6">{message.content}</p>
+        <div className="break-words text-sm leading-6 [&_p]:whitespace-pre-wrap">{renderMessageMarkdown(message.content)}</div>
         {!isUser && sources.length > 0 && (
           <div className="mt-4 border-t border-slate-700/80 pt-3">
             <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
               <FileCode2 size={13} /> Source files
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-col gap-1.5">
               {sources.map((source, index) => {
                 const label = typeof source === 'string'
                   ? source
@@ -68,7 +123,7 @@ function ChatMessage({ message }) {
                   <span
                     key={`${label}-${index}`}
                     title={label}
-                    className="max-w-full break-all rounded-lg border border-slate-700 bg-slate-900/70 px-2.5 py-1.5 font-mono text-[11px] text-cyan-200"
+                    className="block w-full max-w-full break-all rounded-lg border border-slate-700 bg-slate-900/70 px-2.5 py-1.5 font-mono text-[11px] leading-5 text-cyan-200"
                   >
                     {label}
                   </span>
