@@ -112,7 +112,7 @@ export default function DashboardOverview({
           </h2>
 
           <p className="mt-2 text-sm leading-relaxed text-slate-400">
-            RepoInsight synchronizes your GitHub repositories, indexes code into vector embeddings for semantic Q&amp;A, and generates deep architecture diagrams.
+            RepoInsight synchronizes your GitHub repositories, prepares code for Q&amp;A, and generates architecture diagrams.
           </p>
 
           <div className="mt-6 flex flex-wrap items-center gap-3">
@@ -156,10 +156,10 @@ export default function DashboardOverview({
 
         <StatCard
           icon={<Database size={20} />}
-          label="Code Indexing Health"
+          label="Code Q&A Readiness"
           value={`${indexingPercentage}%`}
           note={`${indexedCount} of ${totalRepos} codebases ready for Q&A`}
-          trend={indexedCount > 0 ? `${indexedCount} indexed` : '0 indexed'}
+          trend={indexedCount > 0 ? `${indexedCount} ready` : '0 ready'}
           color="cyan"
         />
 

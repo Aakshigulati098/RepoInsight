@@ -35,6 +35,7 @@ export default function ChatWorkspaceView({
   const selectedRepoStatus = selectedRepo
     ? String(indexingStatuses[selectedRepo.id]?.status || 'NOT_INDEXED').toUpperCase()
     : 'NOT_INDEXED';
+  const isSelectedRepoReadyForQa = selectedRepoStatus === 'COMPLETED';
 
   return (
     <div className="space-y-6">
@@ -47,7 +48,7 @@ export default function ChatWorkspaceView({
           </span>
         </div>
         <p className="mt-1 text-xs text-slate-400">
-          Ask questions, trace architecture patterns, and debug code across your indexed repositories.
+          Ask questions, trace architecture patterns, and debug code across repositories prepared for Q&amp;A.
         </p>
       </div>
 
@@ -102,7 +103,13 @@ export default function ChatWorkspaceView({
                           : 'border-slate-700 bg-slate-800 text-slate-400'
                       }`}
                     >
-                      {isIndexed ? 'Indexed' : status === 'IN_PROGRESS' ? 'Indexing...' : 'Not indexed'}
+                      {isIndexed
+                        ? 'Ready for Q&A'
+                        : status === 'IN_PROGRESS' || status === 'PENDING'
+                        ? 'Preparing...'
+                        : status === 'FAILED'
+                        ? 'Preparation failed'
+                        : 'Not ready'}
                     </span>
                   </button>
                 );
@@ -137,7 +144,7 @@ export default function ChatWorkspaceView({
                   <div className="flex items-center justify-between">
                     <span className="flex items-center gap-2 text-xs font-semibold text-slate-300">
                       <Database size={15} className="text-emerald-400" />
-                      Vector Indexing Status
+                      Q&amp;A Preparation
                     </span>
 
                     <span
@@ -152,23 +159,29 @@ export default function ChatWorkspaceView({
                       }`}
                     >
                       {selectedRepoStatus === 'COMPLETED' && <CheckCircle2 size={11} />}
-                      {selectedRepoStatus}
+                      {isSelectedRepoReadyForQa
+                        ? 'READY'
+                        : selectedRepoStatus === 'IN_PROGRESS' || selectedRepoStatus === 'PENDING'
+                        ? 'PREPARING'
+                        : selectedRepoStatus === 'FAILED'
+                        ? 'FAILED'
+                        : 'NOT READY'}
                     </span>
                   </div>
 
                   <p className="mt-2 text-xs text-slate-400">
                     {selectedRepoStatus === 'COMPLETED'
-                      ? 'Source files have been chunked, converted to embeddings with nomic-embed-text, and stored in pgvector. You can ask any architectural or implementation questions!'
+                      ? 'Code is ready. You can ask questions about its architecture and implementation.'
                       : selectedRepoStatus === 'IN_PROGRESS' || selectedRepoStatus === 'PENDING'
-                      ? 'Indexing is currently running in the background. Chunks are being extracted and embedded.'
-                      : 'This repository has not been indexed yet. Index it first so the AI model has full semantic context of all files.'}
+                      ? 'Code is being prepared for Q&A in the background.'
+                      : 'Prepare this codebase for Q&A before asking code questions.'}
                   </p>
 
                   {selectedRepoStatus !== 'COMPLETED' && (
                     <button
                       type="button"
                       onClick={() => onIndexRepo(selectedRepo.id)}
-                      disabled={indexingId === selectedRepo.id || selectedRepoStatus === 'IN_PROGRESS'}
+                      disabled={indexingId === selectedRepo.id || selectedRepoStatus === 'IN_PROGRESS' || selectedRepoStatus === 'PENDING'}
                       className="mt-4 inline-flex items-center gap-2 rounded-xl bg-emerald-400 px-4 py-2 text-xs font-bold text-slate-950 transition hover:bg-emerald-300 disabled:opacity-50"
                     >
                       {indexingId === selectedRepo.id ? (
@@ -176,7 +189,7 @@ export default function ChatWorkspaceView({
                       ) : (
                         <Database size={14} />
                       )}
-                      Index {selectedRepo.name} Now
+                      Optimize code for Q&amp;A
                     </button>
                   )}
                 </div>
@@ -195,8 +208,12 @@ export default function ChatWorkspaceView({
                     ].map((prompt) => (
                       <div
                         key={prompt}
-                        onClick={() => onSelectRepoForChat(selectedRepo)}
-                        className="cursor-pointer rounded-xl border border-slate-800/80 bg-[#090f1b] p-3 text-xs text-slate-300 transition hover:border-cyan-500/40 hover:bg-[#0c1527] hover:text-cyan-300"
+                        onClick={() => isSelectedRepoReadyForQa && onSelectRepoForChat(selectedRepo)}
+                        className={`rounded-xl border border-slate-800/80 bg-[#090f1b] p-3 text-xs text-slate-300 transition ${
+                          isSelectedRepoReadyForQa
+                            ? 'cursor-pointer hover:border-cyan-500/40 hover:bg-[#0c1527] hover:text-cyan-300'
+                            : 'cursor-not-allowed opacity-40'
+                        }`}
                       >
                         "{prompt}"
                       </div>
@@ -212,10 +229,14 @@ export default function ChatWorkspaceView({
                 <button
                   type="button"
                   onClick={() => onSelectRepoForChat(selectedRepo)}
-                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 px-5 py-3 text-xs font-bold text-slate-950 shadow-lg shadow-cyan-500/20 transition hover:from-cyan-300 hover:to-blue-400 active:scale-98"
+                  disabled={!isSelectedRepoReadyForQa}
+                  title={isSelectedRepoReadyForQa ? 'Open code Q&A' : 'Optimize code for Q&A to enable code chat'}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 px-5 py-3 text-xs font-bold text-slate-950 shadow-lg shadow-cyan-500/20 transition hover:from-cyan-300 hover:to-blue-400 active:scale-98 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <MessageSquareCode size={16} />
-                  Open Interactive Q&amp;A Session for {selectedRepo.name}
+                  {isSelectedRepoReadyForQa
+                    ? `Open Interactive Q&A Session for ${selectedRepo.name}`
+                    : 'Optimize code for Q&A to enable code chat'}
                   <ArrowRight size={16} />
                 </button>
               </div>

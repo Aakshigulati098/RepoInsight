@@ -57,6 +57,14 @@ export default function RepositoryCard({
   const status = String(indexingStatus?.status || 'NOT_INDEXED').toUpperCase();
   const progress = Math.max(0, Math.min(100, Number(indexingStatus?.progress || 0)));
   const isActiveIndexing = status === 'IN_PROGRESS' || status === 'PENDING' || isIndexing;
+  const isReadyForQa = status === 'COMPLETED';
+  const statusLabel = isReadyForQa
+    ? 'Ready for Q&A'
+    : isActiveIndexing
+    ? 'Preparing for Q&A'
+    : status === 'FAILED'
+    ? 'Preparation failed'
+    : 'Not prepared';
 
   // Language color
   const langColor = LANGUAGE_COLORS[repo.language] || '#94a3b8';
@@ -153,12 +161,12 @@ export default function RepositoryCard({
           </div>
         )}
 
-        {/* Indexing Status Box */}
+        {/* Q&A Readiness Status */}
         <div className="mt-4 rounded-xl border border-slate-800/90 bg-[#090f1c] p-3.5">
           <div className="flex items-center justify-between text-xs">
             <span className="flex items-center gap-2 font-medium text-slate-300">
               <Database size={14} className={isActiveIndexing ? 'text-amber-400 animate-pulse' : 'text-emerald-400'} />
-              Code indexing
+              Q&amp;A preparation
             </span>
 
             <span
@@ -175,7 +183,7 @@ export default function RepositoryCard({
               {isActiveIndexing && <LoaderCircle size={10} className="animate-spin" />}
               {status === 'COMPLETED' && <CheckCircle2 size={10} />}
               {status === 'FAILED' && <AlertCircle size={10} />}
-              {status.replaceAll('_', ' ')}
+              {statusLabel}
             </span>
           </div>
 
@@ -198,22 +206,23 @@ export default function RepositoryCard({
               {indexingStatus?.error
                 ? indexingStatus.error
                 : isActiveIndexing
-                ? indexingStatus?.stage || 'Indexing code chunks into pgvector...'
+                ? indexingStatus?.stage || 'Preparing code for Q&A...'
                 : status === 'COMPLETED'
-                ? 'Indexed & ready for semantic Q&A'
-                : 'Index code to unlock conversational AI'}
+                ? 'Ready for code Q&A'
+                : 'Optimize code for Q&A to enable code chat'}
             </span>
             <span className="shrink-0 font-medium text-slate-400">
               {status === 'COMPLETED' ? '100%' : `${progress}%`}
             </span>
           </div>
 
-          {isActiveIndexing
-            && indexingStatus?.chunksIndexed != null
-            && indexingStatus?.totalChunks > 0 && (
+          {isActiveIndexing && indexingStatus?.chunksIndexed > 0 && (
             <div className="mt-1 flex items-center gap-1.5 text-[10px] text-amber-300/80">
               <span>
-                {indexingStatus.chunksIndexed} / {indexingStatus.totalChunks} chunks processed
+                {indexingStatus.chunksIndexed}
+                {indexingStatus.totalChunks > 0
+                  ? ` / ~${indexingStatus.totalChunks}`
+                  : ''} chunks optimized
               </span>
             </div>
           )}
@@ -221,7 +230,7 @@ export default function RepositoryCard({
           {status === 'COMPLETED' && indexingStatus?.chunksIndexed != null && (
             <div className="mt-1 flex items-center gap-1.5 text-[10px] text-emerald-400/80">
               <CheckCircle2 size={11} />
-              <span>{indexingStatus.chunksIndexed} chunks indexed</span>
+              <span>{indexingStatus.chunksIndexed} chunks optimized</span>
             </div>
           )}
         </div>
@@ -277,9 +286,9 @@ export default function RepositoryCard({
           <button
             type="button"
             onClick={() => onChat(repo)}
-            disabled={isDeleting}
-            className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-xs font-semibold text-cyan-300 transition-all hover:bg-cyan-500/20 hover:border-cyan-400 disabled:opacity-50"
-            title="Chat with repository codebase"
+            disabled={isDeleting || !isReadyForQa}
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-xs font-semibold text-cyan-300 transition-all hover:bg-cyan-500/20 hover:border-cyan-400 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-cyan-500/30 disabled:hover:bg-cyan-500/10"
+            title={isReadyForQa ? 'Ask questions about this codebase' : 'Optimize code for Q&A to enable code chat'}
           >
             <MessageCircle size={14} />
             Ask code
@@ -307,9 +316,10 @@ export default function RepositoryCard({
             onClick={() => onIndex(repo.id)}
             disabled={isActiveIndexing || isDeleting}
             className="flex items-center justify-center rounded-xl border border-slate-700 bg-slate-800/80 p-2 text-xs font-medium text-slate-300 transition hover:bg-slate-700 hover:text-white disabled:opacity-50"
-            title="Re-index codebase embeddings"
+            title="Optimize code for Q&A"
           >
             <Database size={14} className={isActiveIndexing ? 'animate-spin text-amber-400' : ''} />
+            <span className="ml-1">Optimize code for Q&amp;A</span>
           </button>
 
           {/* Delete */}

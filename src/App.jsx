@@ -103,7 +103,10 @@ export default function App() {
             const status = await getRepositoryIndexingStatus(repository.id);
             return [repository.id, status];
           } catch {
-            return [repository.id, null];
+            return [
+              repository.id,
+              { status: 'NOT_INDEXED', progress: 0, chunksIndexed: 0 },
+            ];
           }
         })
       );
@@ -112,8 +115,7 @@ export default function App() {
       setIndexingStatuses((current) => {
         const next = { ...current };
         for (const [id, status] of results) {
-          if (status) next[id] = status;
-          else if (!(id in next)) next[id] = { status: 'NOT_INDEXED', progress: 0, chunksIndexed: 0 };
+          next[id] = status;
         }
         return next;
       });
@@ -216,6 +218,16 @@ export default function App() {
 
     try {
       const repository = await importRepository(url);
+      if (repository?.id != null) {
+        setIndexingStatuses((current) => ({
+          ...current,
+          [repository.id]: {
+            status: 'NOT_INDEXED',
+            progress: 0,
+            chunksIndexed: 0,
+          },
+        }));
+      }
       setModalOpen(false);
       setMessage(`Successfully imported ${repository?.name || 'repository'}.`);
       await loadRepositories();
@@ -239,13 +251,13 @@ export default function App() {
       await startRepositoryIndexing(repositoryId);
       const status = await getRepositoryIndexingStatus(repositoryId);
       setIndexingStatuses((current) => ({ ...current, [repositoryId]: status }));
-      setMessage('Repository indexing started in background.');
+      setMessage('Code preparation for Q&A has started in the background.');
     } catch (err) {
       setIndexingStatuses((current) => ({
         ...current,
-        [repositoryId]: { status: 'FAILED', progress: 0, error: err.message || 'Unable to start indexing.' },
+        [repositoryId]: { status: 'FAILED', progress: 0, error: err.message || 'Unable to prepare code for Q&A.' },
       }));
-      setError(err.message || 'Unable to start repository indexing.');
+      setError(err.message || 'Unable to prepare code for Q&A.');
     } finally {
       setIndexingId(null);
     }
@@ -270,6 +282,14 @@ export default function App() {
   }
 
   function openRepositoryChat(repository) {
+    const status = String(
+      indexingStatuses[repository.id]?.status || 'NOT_INDEXED'
+    ).toUpperCase();
+    if (status !== 'COMPLETED') {
+      setError('Optimize code for Q&A before asking questions about this repository.');
+      setMessage('');
+      return;
+    }
     setChatRepository(repository);
     setError('');
     setMessage('');

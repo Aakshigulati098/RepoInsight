@@ -32,7 +32,7 @@ export default function Sidebar({
       label: 'Repositories',
       icon: FolderGit2,
       badge: repositoryCount,
-      desc: 'Codebases & indexing',
+      desc: 'Codebases & Q&A setup',
     },
     {
       id: 'analysis',

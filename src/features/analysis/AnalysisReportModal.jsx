@@ -44,7 +44,7 @@ export default function AnalysisReportModal({ report, onClose }) {
 
   const technologies = normalizeList(report.technologies);
   const importantFiles = normalizeList(report.importantFiles);
-  const sampleFiles = report.sampleFilePaths || [];
+  const sampleFiles = normalizeList(report.sampleFilePaths).slice(0, 8);
   const createdAt = report.createdAt || report.created_at;
 
   return (

@@ -158,7 +158,7 @@ export default function RepositoryList({
             </span>
           </div>
           <p className="mt-1 text-xs text-slate-400">
-            Imported GitHub codebases with semantic vector indexing and AI reports.
+            Imported GitHub codebases prepared for Q&amp;A and AI reports.
           </p>
         </div>
 
@@ -270,19 +270,19 @@ export default function RepositoryList({
           </div>
         </div>
 
-        {/* Indexing Status Pills Row */}
+        {/* Q&A Preparation Filters */}
         <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-slate-800/80 pt-3">
           <span className="text-[11px] font-medium text-slate-500 mr-1 flex items-center gap-1">
             <Filter size={11} />
-            Indexing:
+            Q&amp;A setup:
           </span>
 
           {[
             { id: 'ALL', label: 'All' },
             { id: 'INDEXED', label: '✓ Ready for Q&A' },
-            { id: 'IN_PROGRESS', label: '⚡ In Progress' },
-            { id: 'NOT_INDEXED', label: 'Not Indexed' },
-            { id: 'FAILED', label: 'Failed' },
+            { id: 'IN_PROGRESS', label: '⚡ Preparing' },
+            { id: 'NOT_INDEXED', label: 'Not ready' },
+            { id: 'FAILED', label: 'Preparation failed' },
           ].map((status) => (
             <button
               key={status.id}
@@ -386,7 +386,7 @@ export default function RepositoryList({
                   <th className="px-4 py-3 font-semibold">Language</th>
                   <th className="px-4 py-3 font-semibold">Stars</th>
                   <th className="px-4 py-3 font-semibold">Forks</th>
-                  <th className="px-4 py-3 font-semibold">Indexing Status</th>
+                  <th className="px-4 py-3 font-semibold">Q&amp;A Readiness</th>
                   <th className="px-4 py-3 font-semibold text-right">Actions</th>
                 </tr>
               </thead>
@@ -396,6 +396,13 @@ export default function RepositoryList({
                   const avatar = repo.ownerAvatarUrl || (owner ? `https://github.com/${owner}.png` : null);
                   const indexing = indexingStatuses[repo.id] || {};
                   const status = String(indexing.status || 'NOT_INDEXED').toUpperCase();
+                  const statusLabel = status === 'COMPLETED'
+                    ? 'Ready for Q&A'
+                    : status === 'IN_PROGRESS' || status === 'PENDING'
+                    ? 'Preparing for Q&A'
+                    : status === 'FAILED'
+                    ? 'Preparation failed'
+                    : 'Not prepared';
 
                   return (
                     <tr key={repo.id} className="transition hover:bg-slate-800/30">
@@ -471,7 +478,7 @@ export default function RepositoryList({
                           }`}
                         >
                           {status === 'COMPLETED' && <CheckCircle2 size={10} />}
-                          {status.replaceAll('_', ' ')}
+                          {statusLabel}
                         </span>
                       </td>
 
@@ -481,8 +488,9 @@ export default function RepositoryList({
                           <button
                             type="button"
                             onClick={() => onChat(repo)}
-                            className="rounded-lg border border-cyan-500/30 bg-cyan-500/10 p-1.5 text-cyan-300 hover:bg-cyan-500/20"
-                            title="Ask code"
+                            disabled={status !== 'COMPLETED' || deletingRepositoryId === repo.id}
+                            className="rounded-lg border border-cyan-500/30 bg-cyan-500/10 p-1.5 text-cyan-300 hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-cyan-500/10"
+                            title={status === 'COMPLETED' ? 'Ask questions about this codebase' : 'Optimize code for Q&A to enable code chat'}
                           >
                             <MessageCircle size={13} />
                           </button>
@@ -498,9 +506,10 @@ export default function RepositoryList({
                           <button
                             type="button"
                             onClick={() => onIndex(repo.id)}
-                            disabled={indexingId === repo.id}
+                            disabled={indexingId === repo.id || status === 'IN_PROGRESS' || status === 'PENDING' || deletingRepositoryId === repo.id}
                             className="rounded-lg border border-slate-700 bg-slate-800 p-1.5 text-slate-300 hover:bg-slate-700 disabled:opacity-50"
-                            title="Index"
+                            title="Optimize code for Q&A"
+                            aria-label={`Optimize ${repo.name} code for Q&A`}
                           >
                             <Database size={13} />
                           </button>
