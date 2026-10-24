@@ -11,10 +11,12 @@ import {
   Plus,
   Search,
   Sparkles,
+  Trash2,
   X,
 } from 'lucide-react';
 import {
   createRepositoryChat,
+  deleteChat,
   getChatMessages,
   listRepositoryChats,
   sendChatMessage,
@@ -148,6 +150,8 @@ export default function RepositoryChatModal({ repository, onClose }) {
   const [question, setQuestion] = useState('');
   const [loading, setLoading] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(true);
+  const [deletingChatId, setDeletingChatId] = useState(null);
+  const [chatPendingDeletion, setChatPendingDeletion] = useState(null);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -215,14 +219,14 @@ export default function RepositoryChatModal({ repository, onClose }) {
   }, [loading, onClose]);
 
   function startNewChat() {
-    if (loading || historyLoading) return;
+    if (loading || historyLoading || deletingChatId != null) return;
     setActiveChatId(null);
     setQuestion('');
     setError('');
   }
 
   async function openChat(chatId) {
-    if (loading) return;
+    if (loading || deletingChatId != null) return;
     setActiveChatId(chatId);
     setError('');
 
@@ -247,10 +251,37 @@ export default function RepositoryChatModal({ repository, onClose }) {
     }
   }
 
+  function handleDeleteChat(chat) {
+    if (loading || deletingChatId != null) return;
+    setChatPendingDeletion(chat);
+  }
+
+  async function confirmDeleteChat() {
+    const chat = chatPendingDeletion;
+    if (!chat || loading || deletingChatId != null) return;
+    setDeletingChatId(chat.id);
+    setError('');
+    try {
+      await deleteChat(chat.id);
+      setChats((current) =>
+        current.filter((item) => String(item.id) !== String(chat.id))
+      );
+      if (String(activeChatId) === String(chat.id)) {
+        setActiveChatId(null);
+        setQuestion('');
+      }
+      setChatPendingDeletion(null);
+    } catch (err) {
+      setError(err.message || 'Unable to delete this conversation.');
+    } finally {
+      setDeletingChatId(null);
+    }
+  }
+
   async function submitQuestion(event) {
     event.preventDefault();
     const prompt = question.trim();
-    if (!prompt || loading) return;
+    if (!prompt || loading || deletingChatId != null) return;
 
     setError('');
     setLoading(true);
@@ -330,7 +361,7 @@ export default function RepositoryChatModal({ repository, onClose }) {
             <div className="p-3">
               <button
                 onClick={startNewChat}
-                disabled={loading || historyLoading}
+                disabled={loading || historyLoading || deletingChatId != null}
                 className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-400 px-3 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Plus size={16} /> New chat
@@ -355,18 +386,35 @@ export default function RepositoryChatModal({ repository, onClose }) {
                   <p className="mt-1 text-[11px] text-slate-600">Your conversations will appear here.</p>
                 </div>
               ) : filteredChats.map((chat) => (
-                <button
+                <div
                   key={chat.id}
-                  onClick={() => openChat(chat.id)}
-                  disabled={loading}
-                  className={`w-full rounded-xl px-3 py-3 text-left transition ${String(chat.id) === String(activeChatId) ? 'border border-emerald-400/20 bg-emerald-400/10' : 'border border-transparent hover:bg-slate-800/70'} disabled:cursor-not-allowed`}
+                  className={`group flex items-center gap-1 rounded-xl pr-1 transition ${String(chat.id) === String(activeChatId) ? 'border border-emerald-400/20 bg-emerald-400/10' : 'border border-transparent hover:bg-slate-800/70'}`}
                 >
-                  <div className="truncate text-sm font-medium text-slate-200">{chat.title}</div>
-                  <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-slate-500">
-                    <span>{chat.messagesLoaded ? `${chat.messages.length} messages` : 'Conversation'}</span>
-                    <span>{formatDate(chat.updatedAt)}</span>
-                  </div>
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => openChat(chat.id)}
+                    disabled={loading || deletingChatId != null}
+                    className="min-w-0 flex-1 rounded-xl px-3 py-3 text-left disabled:cursor-not-allowed"
+                  >
+                    <div className="truncate text-sm font-medium text-slate-200">{chat.title}</div>
+                    <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-slate-500">
+                      <span>{chat.messagesLoaded ? `${chat.messages.length} messages` : 'Conversation'}</span>
+                      <span>{formatDate(chat.updatedAt)}</span>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteChat(chat)}
+                    disabled={loading || deletingChatId != null}
+                    aria-label={`Delete chat: ${chat.title}`}
+                    title="Delete chat"
+                    className="rounded-lg p-2 text-slate-500 opacity-100 transition hover:bg-red-500/10 hover:text-red-300 focus:opacity-100 sm:opacity-0 sm:group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {deletingChatId != null && String(deletingChatId) === String(chat.id)
+                      ? <LoaderCircle size={15} className="animate-spin" />
+                      : <Trash2 size={15} />}
+                  </button>
+                </div>
               ))}
             </div>
             <div className="border-t border-slate-800 px-4 py-3 text-[11px] text-slate-500">Saved to your database</div>
@@ -494,6 +542,59 @@ export default function RepositoryChatModal({ repository, onClose }) {
           </div>
         </div>
       </section>
+      {chatPendingDeletion && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 p-4 backdrop-blur-xs"
+          onClick={() => {
+            if (deletingChatId == null) setChatPendingDeletion(null);
+          }}
+        >
+          <section
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="delete-chat-dialog-title"
+            onClick={(event) => event.stopPropagation()}
+            className="w-full max-w-md rounded-3xl border border-slate-700/80 bg-gradient-to-b from-[#131c2e] to-[#0d1424] p-6 shadow-2xl"
+          >
+            <div className="flex items-start gap-4">
+              <div className="rounded-2xl border border-red-500/20 bg-red-500/10 p-3 text-red-400">
+                <Trash2 size={22} />
+              </div>
+              <div>
+                <h3 id="delete-chat-dialog-title" className="text-base font-bold text-white">
+                  Delete chat?
+                </h3>
+                <p className="mt-2 text-xs leading-relaxed text-slate-400">
+                  Are you sure you want to delete{' '}
+                  <span className="font-semibold text-slate-200">
+                    {chatPendingDeletion.title}
+                  </span>
+                  {' '}and all its messages? This action cannot be undone.
+                </p>
+              </div>
+            </div>
+            <div className="mt-6 flex justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setChatPendingDeletion(null)}
+                disabled={deletingChatId != null}
+                className="rounded-xl border border-slate-700 px-4 py-2 text-xs font-semibold text-slate-300 hover:bg-slate-800 disabled:opacity-50"
+              >
+                No, keep it
+              </button>
+              <button
+                type="button"
+                onClick={confirmDeleteChat}
+                disabled={deletingChatId != null}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-red-500 px-4 py-2 text-xs font-bold text-white hover:bg-red-400 disabled:opacity-50"
+              >
+                <Trash2 size={14} />
+                {deletingChatId != null ? 'Deleting...' : 'Yes, delete'}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }

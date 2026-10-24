@@ -97,6 +97,12 @@ export function sendChatMessage(chatId, question) {
   });
 }
 
+export function deleteChat(chatId) {
+  return request(`/api/chats/${chatId}`, {
+    method: "DELETE",
+  });
+}
+
 
 // Start repository indexing in the background (HTTP 202 Accepted).
 export function startRepositoryIndexing(repositoryId) {
