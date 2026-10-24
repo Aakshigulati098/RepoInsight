@@ -198,7 +198,7 @@ export default function RepositoryCard({
               {indexingStatus?.error
                 ? indexingStatus.error
                 : isActiveIndexing
-                ? 'Indexing code chunks into pgvector...'
+                ? indexingStatus?.stage || 'Indexing code chunks into pgvector...'
                 : status === 'COMPLETED'
                 ? 'Indexed & ready for semantic Q&A'
                 : 'Index code to unlock conversational AI'}
@@ -207,6 +207,16 @@ export default function RepositoryCard({
               {status === 'COMPLETED' ? '100%' : `${progress}%`}
             </span>
           </div>
+
+          {isActiveIndexing
+            && indexingStatus?.chunksIndexed != null
+            && indexingStatus?.totalChunks > 0 && (
+            <div className="mt-1 flex items-center gap-1.5 text-[10px] text-amber-300/80">
+              <span>
+                {indexingStatus.chunksIndexed} / {indexingStatus.totalChunks} chunks processed
+              </span>
+            </div>
+          )}
 
           {status === 'COMPLETED' && indexingStatus?.chunksIndexed != null && (
             <div className="mt-1 flex items-center gap-1.5 text-[10px] text-emerald-400/80">

@@ -43,7 +43,7 @@ export default function AnalysisReportModal({ report, onClose }) {
     `Analysis report #${report.id ?? ''}`;
 
   const technologies = normalizeList(report.technologies);
-  const importantFiles = report.importantFiles || [];
+  const importantFiles = normalizeList(report.importantFiles);
   const sampleFiles = report.sampleFilePaths || [];
   const createdAt = report.createdAt || report.created_at;
 
@@ -146,7 +146,11 @@ export default function AnalysisReportModal({ report, onClose }) {
           </ReportSection>
 
           <ReportSection title="Architecture diagram">
-            <MermaidDiagram chart={report.architectureDiagram} />
+            <MermaidDiagram
+              chart={report.architectureDiagram}
+              technologies={technologies}
+              importantFiles={importantFiles}
+            />
           </ReportSection>
 
           <ReportSection title="Important files">

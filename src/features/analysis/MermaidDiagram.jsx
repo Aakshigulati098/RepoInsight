@@ -1,9 +1,53 @@
 import { useEffect, useRef, useState } from 'react';
 import mermaid from 'mermaid';
 
-export default function MermaidDiagram({ chart }) {
+function buildEvidenceFallback(technologies, importantFiles) {
+  const safeLabels = (items) => (Array.isArray(items) ? items : [])
+    .filter((item) => typeof item === 'string' && item.trim())
+    .slice(0, 5)
+    .map((item) => item
+      .replace(/[\r\n]+/g, ' ')
+      .replace(/["[\]{}()<>|#;]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 80))
+    .filter(Boolean);
+
+  const detectedTechnologies = safeLabels(technologies);
+  const detectedFiles = safeLabels(importantFiles);
+  const lines = [
+    'flowchart TD',
+    '  A["Repository"]',
+  ];
+
+  if (detectedTechnologies.length) {
+    lines.push('  B["Detected technologies"]', '  A --> B');
+    detectedTechnologies.forEach((technology, index) => {
+      const id = `T${index}`;
+      lines.push(`  ${id}["${technology}"]`, `  B --> ${id}`);
+    });
+  }
+
+  if (detectedFiles.length) {
+    lines.push('  C["Important project files"]', '  A --> C');
+    detectedFiles.forEach((file, index) => {
+      const id = `F${index}`;
+      lines.push(`  ${id}["${file}"]`, `  C --> ${id}`);
+    });
+  }
+
+  return lines.join('\n');
+}
+
+export default function MermaidDiagram({
+  chart,
+  technologies = [],
+  importantFiles = [],
+}) {
   const containerRef = useRef(null);
   const [diagramError, setDiagramError] = useState('');
+  const technologyKey = technologies.join('\n');
+  const importantFilesKey = importantFiles.join('\n');
 
   useEffect(() => {
     let cancelled = false;
@@ -33,9 +77,28 @@ export default function MermaidDiagram({ chart }) {
         }
       } catch {
         if (!cancelled) {
-          setDiagramError(
-            'The diagram could not be rendered. Check the saved Mermaid source below.'
+          const fallback = buildEvidenceFallback(
+            technologyKey ? technologyKey.split('\n') : [],
+            importantFilesKey ? importantFilesKey.split('\n') : []
           );
+          try {
+            const { svg } = await mermaid.render(
+              `repo-diagram-fallback-${Date.now()}`,
+              fallback
+            );
+            if (!cancelled && containerRef.current) {
+              containerRef.current.innerHTML = svg;
+              setDiagramError(
+                'The generated diagram could not be rendered. Showing a diagram based on detected technologies and project files instead.'
+              );
+            }
+          } catch {
+            if (!cancelled) {
+              setDiagramError(
+                'The generated diagram could not be rendered. Check the saved Mermaid source below.'
+              );
+            }
+          }
         }
       }
     }
@@ -45,7 +108,7 @@ export default function MermaidDiagram({ chart }) {
     return () => {
       cancelled = true;
     };
-  }, [chart]);
+  }, [chart, technologyKey, importantFilesKey]);
 
   if (typeof chart !== 'string' || !chart.trim()) {
     return (
