@@ -1,14 +1,18 @@
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   GitBranch,
   Plus,
   GitFork,
-  Activity,
+  LayoutDashboard,
+  FolderGit2,
   Sparkles,
+  MessageSquareCode,
   X,
   Trash2,
+  CheckCircle2,
+  AlertCircle,
+  Menu,
 } from 'lucide-react';
-
-import { useEffect, useState, useCallback } from 'react';
 
 import {
   getRepositories,
@@ -22,26 +26,17 @@ import {
   getRepositoryIndexingStatus,
 } from './service/api.js';
 
-import AnalysisReportModal from './features/analysis/AnalysisReportModal';
-import AnalysisReportsList from './features/analysis/AnalysisReportsList';
-import RepositoryList from './features/repositories/RepositoryList';
+import Sidebar from './components/Sidebar.jsx';
+import DashboardOverview from './features/dashboard/DashboardOverview.jsx';
+import RepositoryList from './features/repositories/RepositoryList.jsx';
+import AnalysisReportsList from './features/analysis/AnalysisReportsList.jsx';
+import ChatWorkspaceView from './features/chat/ChatWorkspaceView.jsx';
+import ImportRepositoryModal from './components/ImportRepositoryModal.jsx';
+import AnalysisReportModal from './features/analysis/AnalysisReportModal.jsx';
 import RepositoryChatModal from './components/RepositoryChatModel.jsx';
 
-function StatCard({ icon, label, value, note }) {
-  return (
-    <div className="rounded-xl border border-slate-800 bg-[#111b2e] p-5">
-      <div className="flex items-center justify-between">
-        <span className="text-sm text-slate-400">{label}</span>
-        <span className="text-emerald-300">{icon}</span>
-      </div>
-
-      <p className="mt-5 text-3xl font-bold">{value}</p>
-      <p className="mt-2 text-xs text-slate-500">{note}</p>
-    </div>
-  );
-}
-
-function App() {
+export default function App() {
+  const [activeTab, setActiveTab] = useState('dashboard'); // 'dashboard' | 'repositories' | 'analysis' | 'chat'
   const [repositories, setRepositories] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -49,7 +44,6 @@ function App() {
   const [reportsLoading, setReportsLoading] = useState(true);
 
   const [error, setError] = useState('');
-  const [githubUrl, setGithubUrl] = useState('');
   const [message, setMessage] = useState('');
 
   const [modalOpen, setModalOpen] = useState(false);
@@ -64,6 +58,7 @@ function App() {
   const [pendingDeletion, setPendingDeletion] = useState(null);
   const [indexingStatuses, setIndexingStatuses] = useState({});
   const [indexingId, setIndexingId] = useState(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // Load repositories from the backend.
   const loadRepositories = useCallback(async () => {
@@ -77,6 +72,25 @@ function App() {
     }
   }, []);
 
+  // Load saved AI analysis reports.
+  const loadAnalysisReports = useCallback(async () => {
+    try {
+      const reports = await getAnalysisReports();
+      if (!Array.isArray(reports)) {
+        throw new Error('Unexpected response while loading analysis reports.');
+      }
+      setAnalysisReports(reports);
+    } catch (err) {
+      setError(err.message || 'Unable to load analysis reports.');
+    } finally {
+      setReportsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadRepositories();
+    loadAnalysisReports();
+  }, [loadRepositories, loadAnalysisReports]);
 
   // Load the saved indexing status for each repository.
   useEffect(() => {
@@ -88,9 +102,7 @@ function App() {
           try {
             const status = await getRepositoryIndexingStatus(repository.id);
             return [repository.id, status];
-          } catch (err) {
-            // Keep the dashboard usable if a repository has never been indexed
-            // or its status endpoint is temporarily unavailable.
+          } catch {
             return [repository.id, null];
           }
         })
@@ -108,7 +120,9 @@ function App() {
     }
 
     if (repositories.length) loadStatuses();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [repositories]);
 
   // Poll only repositories that are actively indexing.
@@ -121,10 +135,15 @@ function App() {
 
     let cancelled = false;
     const refreshStatuses = async () => {
-      const results = await Promise.all(activeIds.map(async (id) => {
-        try { return [id, await getRepositoryIndexingStatus(id)]; }
-        catch { return [id, null]; }
-      }));
+      const results = await Promise.all(
+        activeIds.map(async (id) => {
+          try {
+            return [id, await getRepositoryIndexingStatus(id)];
+          } catch {
+            return [id, null];
+          }
+        })
+      );
       if (cancelled) return;
       setIndexingStatuses((current) => {
         const next = { ...current };
@@ -134,8 +153,78 @@ function App() {
     };
 
     const intervalId = setInterval(refreshStatuses, 2000);
-    return () => { cancelled = true; clearInterval(intervalId); };
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+    };
   }, [indexingStatuses]);
+
+  // Poll active analysis reports
+  useEffect(() => {
+    const hasActiveReports = analysisReports.some((report) => {
+      const status = String(report.status ?? '').toUpperCase();
+      return status === 'PENDING' || status === 'IN_PROGRESS';
+    });
+
+    if (!hasActiveReports) return;
+
+    const intervalId = setInterval(() => {
+      loadAnalysisReports();
+    }, 3000);
+
+    return () => clearInterval(intervalId);
+  }, [analysisReports, loadAnalysisReports]);
+
+  // Poll selected report if in progress
+  useEffect(() => {
+    if (!selectedReport) return;
+    const status = String(selectedReport.status ?? '').toUpperCase();
+    if (status !== 'PENDING' && status !== 'IN_PROGRESS') return;
+
+    const reportId = selectedReport.id ?? selectedReport.reportId ?? selectedReport.analysisId;
+    if (reportId == null) return;
+
+    let cancelled = false;
+    const refreshSelectedReport = async () => {
+      try {
+        const updatedReport = await getAnalysisReport(reportId);
+        if (cancelled) return;
+        setSelectedReport(updatedReport);
+        setAnalysisReports((reports) =>
+          reports.map((report) => {
+            const id = report.id ?? report.reportId ?? report.analysisId;
+            return id === reportId ? updatedReport : report;
+          })
+        );
+      } catch (err) {
+        console.error('Unable to refresh analysis report:', err);
+      }
+    };
+
+    const intervalId = setInterval(refreshSelectedReport, 3000);
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+    };
+  }, [selectedReport]);
+
+  // Handlers
+  async function handleImportUrl(url) {
+    setImporting(true);
+    setError('');
+    setMessage('');
+
+    try {
+      const repository = await importRepository(url);
+      setModalOpen(false);
+      setMessage(`Successfully imported ${repository?.name || 'repository'}.`);
+      await loadRepositories();
+    } catch (err) {
+      setError(err.message || 'Could not import repository.');
+    } finally {
+      setImporting(false);
+    }
+  }
 
   async function handleIndexRepository(repositoryId) {
     setIndexingId(repositoryId);
@@ -150,7 +239,7 @@ function App() {
       await startRepositoryIndexing(repositoryId);
       const status = await getRepositoryIndexingStatus(repositoryId);
       setIndexingStatuses((current) => ({ ...current, [repositoryId]: status }));
-      setMessage('Repository indexing started. Its status will update automatically.');
+      setMessage('Repository indexing started in background.');
     } catch (err) {
       setIndexingStatuses((current) => ({
         ...current,
@@ -162,129 +251,6 @@ function App() {
     }
   }
 
-  // Load saved AI analysis reports.
-  const loadAnalysisReports = useCallback(async () => {
-    try {
-      const reports = await getAnalysisReports();
-
-      if (!Array.isArray(reports)) {
-        throw new Error(
-          'Unexpected response while loading analysis reports.'
-        );
-      }
-
-      setAnalysisReports(reports);
-    } catch (err) {
-      setError(err.message || 'Unable to load analysis reports.');
-    } finally {
-      setReportsLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadRepositories();
-    loadAnalysisReports();
-  }, [loadRepositories, loadAnalysisReports]);
-
-
-  useEffect(() => {
-    const hasActiveReports = analysisReports.some((report) => {
-      const status = String(report.status ?? '').toUpperCase();
-
-      return status === 'PENDING' || status === 'IN_PROGRESS';
-    });
-
-    if (!hasActiveReports) {
-      return;
-    }
-
-    const intervalId = setInterval(() => {
-      loadAnalysisReports();
-    }, 3000);
-
-    return () => clearInterval(intervalId);
-  }, [analysisReports, loadAnalysisReports]);
-
-
-useEffect(() => {
-  if (!selectedReport) return;
-
-  const status = String(selectedReport.status ?? '').toUpperCase();
-
-  if (status !== 'PENDING' && status !== 'IN_PROGRESS') {
-    return;
-  }
-
-  const reportId =
-    selectedReport.id ??
-    selectedReport.reportId ??
-    selectedReport.analysisId;
-
-  if (reportId == null) return;
-
-  let cancelled = false;
-
-  const refreshSelectedReport = async () => {
-    try {
-      const updatedReport = await getAnalysisReport(reportId);
-
-      if (cancelled) return;
-
-      setSelectedReport(updatedReport);
-
-      setAnalysisReports((reports) =>
-        reports.map((report) => {
-          const id = report.id ?? report.reportId ?? report.analysisId;
-          return id === reportId ? updatedReport : report;
-        })
-      );
-    } catch (err) {
-      console.error('Unable to refresh analysis report:', err);
-    }
-  };
-
-  const intervalId = setInterval(refreshSelectedReport, 3000);
-
-  return () => {
-    cancelled = true;
-    clearInterval(intervalId);
-  };
-}, [selectedReport]);
-
-  // Import a public GitHub repository.
-  async function handleImport(event) {
-    event.preventDefault();
-
-    const url = githubUrl.trim();
-
-    if (!/^https:\/\/github\.com\/[^/]+\/[^/]+\/?$/.test(url)) {
-      setError('Enter a valid public GitHub repository URL.');
-      return;
-    }
-
-    setImporting(true);
-    setError('');
-    setMessage('');
-
-    try {
-      const repository = await importRepository(url);
-
-      setGithubUrl('');
-      setModalOpen(false);
-
-      setMessage(
-        `Successfully imported ${repository?.name || 'repository'}.`
-      );
-
-      await loadRepositories();
-    } catch (err) {
-      setError(err.message || 'Could not import repository.');
-    } finally {
-      setImporting(false);
-    }
-  }
-
-  // Start AI analysis for a repository.
   async function handleAnalyze(repositoryId) {
     setAnalyzingId(repositoryId);
     setError('');
@@ -292,12 +258,9 @@ useEffect(() => {
 
     try {
       const report = await analyzeRepository(repositoryId);
-
       await loadAnalysisReports();
-
       setMessage(
-        `Analysis queued successfully${report?.id ? ` (Report #${report.id})` : ''
-        }. Tracking its progress in AI Analysis.`
+        `Analysis queued successfully${report?.id ? ` (Report #${report.id})` : ''}. Tracking progress in AI Analysis.`
       );
     } catch (err) {
       setError(err.message || 'Unable to start analysis.');
@@ -312,13 +275,11 @@ useEffect(() => {
     setMessage('');
   }
 
-  // Fetch the complete report before opening its modal.
   async function handleViewReport(reportId) {
     if (reportId == null) {
       setError('This report does not have a valid ID.');
       return;
     }
-
     setReportLoadingId(reportId);
     setError('');
 
@@ -333,11 +294,6 @@ useEffect(() => {
   }
 
   function handleDeleteReport(reportId, repositoryName) {
-    if (reportId == null) {
-      setError('This report does not have a valid ID.');
-      return;
-    }
-
     setPendingDeletion({
       type: 'analysis',
       id: reportId,
@@ -346,11 +302,6 @@ useEffect(() => {
   }
 
   function handleDeleteRepository(repositoryId, repositoryName) {
-    if (repositoryId == null) {
-      setError('This repository does not have a valid ID.');
-      return;
-    }
-
     setPendingDeletion({
       type: 'repository',
       id: repositoryId,
@@ -360,13 +311,11 @@ useEffect(() => {
 
   async function confirmDeletion() {
     if (!pendingDeletion) return;
-
     const { type, id, label } = pendingDeletion;
-    if (type === 'analysis') {
-      setDeletingReportId(id);
-    } else {
-      setDeletingRepositoryId(id);
-    }
+
+    if (type === 'analysis') setDeletingReportId(id);
+    else setDeletingRepositoryId(id);
+
     setError('');
     setMessage('');
 
@@ -374,283 +323,252 @@ useEffect(() => {
       if (type === 'analysis') {
         await deleteAnalysisReport(id);
         setAnalysisReports((reports) =>
-          reports.filter(
-            (report) =>
-              (report.id ?? report.reportId ?? report.analysisId) !== id
-          )
+          reports.filter((r) => (r.id ?? r.reportId ?? r.analysisId) !== id)
         );
-        if (
-          selectedReport?.id === id ||
-          selectedReport?.reportId === id ||
-          selectedReport?.analysisId === id
-        ) {
+        if (selectedReport?.id === id || selectedReport?.reportId === id || selectedReport?.analysisId === id) {
           setSelectedReport(null);
         }
       } else {
         await deleteRepository(id);
-        setRepositories((items) =>
-          items.filter((repository) => repository.id !== id)
-        );
+        setRepositories((items) => items.filter((r) => r.id !== id));
       }
       setPendingDeletion(null);
-      setMessage(
-        type === 'analysis'
-          ? `Deleted analysis for ${label}.`
-          : `Deleted ${label}.`
-      );
+      setMessage(type === 'analysis' ? `Deleted analysis for ${label}.` : `Deleted ${label}.`);
     } catch (err) {
       setError(
-        err.message ||
-        (type === 'analysis'
-          ? 'Unable to delete analysis report.'
-          : 'Unable to delete repository.')
+        err.message || (type === 'analysis' ? 'Unable to delete analysis report.' : 'Unable to delete repository.')
       );
       setPendingDeletion(null);
     } finally {
-      if (type === 'analysis') {
-        setDeletingReportId(null);
-      } else {
-        setDeletingRepositoryId(null);
-      }
+      if (type === 'analysis') setDeletingReportId(null);
+      else setDeletingRepositoryId(null);
     }
   }
 
+  const indexedCount = useMemo(() => {
+    return repositories.filter(
+      (r) => String(indexingStatuses[r.id]?.status || '').toUpperCase() === 'COMPLETED'
+    ).length;
+  }, [repositories, indexingStatuses]);
+
+  // Tab titles
+  const tabTitles = {
+    dashboard: 'Dashboard',
+    repositories: 'Repositories',
+    analysis: 'AI Analysis Reports',
+    chat: 'Codebase Q&A',
+  };
+
   return (
-    <div className="min-h-screen bg-[#0b1120] text-slate-100">
-      {/* Sidebar */}
-      <aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-slate-800 bg-[#0d1527] p-6 md:block">
-        <div className="flex items-center gap-3">
-          <div className="rounded-xl bg-emerald-400 p-2 text-slate-950">
-            <GitFork size={23} />
+    <div className="min-h-screen bg-[#070c16] text-slate-100 flex flex-col font-sans selection:bg-emerald-500/30 selection:text-emerald-200">
+      {/* Desktop Sidebar */}
+      <Sidebar
+        activeTab={activeTab}
+        onTabChange={(tab) => {
+          setActiveTab(tab);
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
+        repositoryCount={repositories.length}
+        reportCount={analysisReports.length}
+        indexedCount={indexedCount}
+        onOpenImport={() => {
+          setError('');
+          setMessage('');
+          setModalOpen(true);
+        }}
+      />
+
+      {/* Main Content Area */}
+      <div className="flex-1 md:pl-64 flex flex-col min-w-0">
+        {/* Top Header / App Bar */}
+        <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-slate-800/80 bg-[#070c16]/85 px-4 sm:px-8 backdrop-blur-md">
+          {/* Mobile hamburger & Title */}
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 md:hidden"
+            >
+              <Menu size={20} />
+            </button>
+
+            <div>
+              <div className="flex items-center gap-2 text-[11px] text-slate-500 font-medium">
+                <span>Workspace</span>
+                <span>/</span>
+                <span className="text-slate-300 font-semibold">{tabTitles[activeTab]}</span>
+              </div>
+            </div>
           </div>
 
-          <div>
-            <h1 className="text-lg font-bold">RepoInsight</h1>
-            <p className="text-xs text-slate-500">
-              Repository intelligence
-            </p>
+          {/* Quick Header Actions */}
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                setError('');
+                setMessage('');
+                setModalOpen(true);
+              }}
+              className="hidden sm:inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-400 to-teal-400 px-3.5 py-1.5 text-xs font-bold text-slate-950 shadow-md shadow-emerald-500/15 transition hover:from-emerald-300 hover:to-teal-300"
+            >
+              <Plus size={14} />
+              Import Repository
+            </button>
           </div>
-        </div>
-
-        <p className="mb-3 mt-10 text-xs font-semibold uppercase tracking-widest text-slate-500">
-          Workspace
-        </p>
-
-        <nav className="space-y-2">
-          <a
-            href="#dashboard"
-            className="flex items-center gap-3 rounded-lg bg-emerald-400/10 px-4 py-3 text-emerald-300"
-          >
-            <Activity size={18} />
-            Dashboard
-          </a>
-
-          <a
-            href="#repositories"
-            className="flex items-center gap-3 rounded-lg px-4 py-3 text-slate-400 hover:bg-slate-800"
-          >
-            <GitBranch size={18} />
-            Repositories
-          </a>
-
-          <a
-            href="#analysis"
-            className="flex items-center gap-3 rounded-lg px-4 py-3 text-slate-400 hover:bg-slate-800"
-          >
-            <Sparkles size={18} />
-            AI Analysis
-          </a>
-        </nav>
-
-        <div className="absolute bottom-6 left-6 right-6 rounded-xl border border-slate-800 p-4">
-          <p className="text-sm font-medium">Powered by Gemini</p>
-          <p className="mt-1 text-xs text-slate-500">
-            Understand your codebase faster.
-          </p>
-        </div>
-      </aside>
-
-      {/* Main dashboard */}
-      <main id="dashboard" className="md:ml-64">
-        {/* Header */}
-        <header className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 px-6 py-5 md:px-10">
-          <div>
-            <p className="text-sm text-slate-500">
-              Workspace / Overview
-            </p>
-            <h2 className="mt-1 text-2xl font-bold">Dashboard</h2>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => {
-              setMessage('');
-              setError('');
-              setModalOpen(true);
-            }}
-            className="flex items-center gap-2 rounded-lg bg-emerald-400 px-4 py-2.5 font-semibold text-slate-950 hover:bg-emerald-300"
-          >
-            <Plus size={18} />
-            Import repository
-          </button>
         </header>
 
-        <div className="space-y-8 p-6 md:p-10">
-          {/* Welcome */}
-          <section>
-            <h3 className="text-xl font-semibold">
-              Welcome to RepoInsight
-            </h3>
-            <p className="mt-2 text-sm text-slate-400">
-              Understand repositories with AI-powered codebase insights.
-            </p>
-          </section>
+        {/* Mobile Navigation Drawer */}
+        {mobileMenuOpen && (
+          <div className="border-b border-slate-800 bg-[#0a101d] p-4 md:hidden">
+            <nav className="space-y-1">
+              {[
+                { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+                { id: 'repositories', label: 'Repositories', icon: FolderGit2, badge: repositories.length },
+                { id: 'analysis', label: 'AI Analysis', icon: Sparkles, badge: analysisReports.length },
+                { id: 'chat', label: 'Code Q&A', icon: MessageSquareCode },
+              ].map((item) => {
+                const Icon = item.icon;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => {
+                      setActiveTab(item.id);
+                      setMobileMenuOpen(false);
+                    }}
+                    className={`flex w-full items-center justify-between rounded-xl p-2.5 text-xs font-medium ${
+                      activeTab === item.id
+                        ? 'bg-emerald-400/10 text-emerald-300 font-bold'
+                        : 'text-slate-400 hover:bg-slate-800'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <Icon size={16} />
+                      {item.label}
+                    </div>
+                    {item.badge != null && (
+                      <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px]">
+                        {item.badge}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </nav>
+          </div>
+        )}
 
-          {/* Error message */}
+        {/* Body content */}
+        <main className="flex-1 p-4 sm:p-8 max-w-7xl w-full mx-auto space-y-6">
+          {/* Notification Messages */}
           {error && (
-            <div
-              role="alert"
-              className="flex items-start justify-between gap-3 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-300"
-            >
-              <p className="break-words">{error}</p>
-
+            <div className="flex items-start justify-between gap-3 rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-xs text-red-300 shadow-md">
+              <div className="flex items-center gap-2">
+                <AlertCircle size={16} className="shrink-0" />
+                <span className="break-words">{error}</span>
+              </div>
               <button
                 type="button"
                 onClick={() => setError('')}
-                aria-label="Dismiss error"
+                className="text-red-400 hover:text-white"
               >
-                <X size={17} />
+                <X size={15} />
               </button>
             </div>
           )}
 
-          {/* Success message */}
           {message && (
-            <div
-              role="status"
-              className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-300"
-            >
-              {message}
+            <div className="flex items-start justify-between gap-3 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-xs text-emerald-300 shadow-md">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 size={16} className="shrink-0" />
+                <span>{message}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMessage('')}
+                className="text-emerald-400 hover:text-white"
+              >
+                <X size={15} />
+              </button>
             </div>
           )}
 
-          {/* Statistics */}
-          <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            <StatCard
-              icon={<GitBranch size={20} />}
-              label="Repositories"
-              value={
-                loading
-                  ? '...'
-                  : String(repositories.length).padStart(2, '0')
-              }
-              note="Loaded from your backend"
+          {/* Active View Switcher */}
+          {activeTab === 'dashboard' && (
+            <DashboardOverview
+              repositories={repositories}
+              analysisReports={analysisReports}
+              indexingStatuses={indexingStatuses}
+              onNavigateTab={(tab) => {
+                setActiveTab(tab);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              onOpenImport={() => setModalOpen(true)}
+              onImport={handleImportUrl}
+              importing={importing}
+              onViewReport={handleViewReport}
+              onChat={openRepositoryChat}
             />
+          )}
 
-            <StatCard
-              icon={<Sparkles size={20} />}
-              label="AI analyses"
-              value={
-                reportsLoading
-                  ? '...'
-                  : String(analysisReports.length).padStart(2, '0')
-              }
-              note="Saved analysis reports"
+          {activeTab === 'repositories' && (
+            <RepositoryList
+              repositories={repositories}
+              loading={loading}
+              importing={importing}
+              analyzingId={analyzingId}
+              deletingRepositoryId={deletingRepositoryId}
+              indexingStatuses={indexingStatuses}
+              indexingId={indexingId}
+              onIndex={handleIndexRepository}
+              onAnalyze={handleAnalyze}
+              onChat={openRepositoryChat}
+              onDelete={handleDeleteRepository}
+              onRefresh={loadRepositories}
+              onOpenImport={() => setModalOpen(true)}
             />
+          )}
 
-            <StatCard
-              icon={<Activity size={20} />}
-              label="System status"
-              value={error ? 'Check' : loading ? 'Loading' : 'Ready'}
-              note={
-                error
-                  ? 'Check backend connection'
-                  : 'Repository API'
-              }
+          {activeTab === 'analysis' && (
+            <AnalysisReportsList
+              reports={analysisReports}
+              loading={reportsLoading}
+              reportLoadingId={reportLoadingId}
+              deletingReportId={deletingReportId}
+              onRefresh={loadAnalysisReports}
+              onViewReport={handleViewReport}
+              onDeleteReport={handleDeleteReport}
             />
-          </section>
+          )}
 
-          {/* Quick repository import */}
-          <section className="rounded-2xl border border-slate-800 bg-[#111b2e] p-5 md:p-7">
-            <div className="flex items-start gap-4">
-              <div className="rounded-xl bg-emerald-400/10 p-3 text-emerald-300">
-                <Sparkles size={23} />
-              </div>
+          {activeTab === 'chat' && (
+            <ChatWorkspaceView
+              repositories={repositories}
+              indexingStatuses={indexingStatuses}
+              onSelectRepoForChat={openRepositoryChat}
+              onIndexRepo={handleIndexRepository}
+              indexingId={indexingId}
+            />
+          )}
+        </main>
 
-              <div>
-                <h3 className="text-lg font-semibold">
-                  Analyze a repository
-                </h3>
-                <p className="mt-1 text-sm text-slate-400">
-                  Import a public GitHub repository to get started.
-                </p>
-              </div>
-            </div>
+        {/* Footer */}
+        <footer className="border-t border-slate-800/80 py-5 text-center text-xs text-slate-600">
+          RepoInsight v2.0 · AI-powered repository intelligence · Powered by Spring AI &amp; pgvector
+        </footer>
+      </div>
 
-            <form
-              onSubmit={handleImport}
-              className="mt-6 flex flex-col gap-3 sm:flex-row"
-            >
-              <div className="flex flex-1 items-center gap-3 rounded-lg border border-slate-700 bg-[#0b1120] px-4">
-                <GitBranch
-                  size={19}
-                  className="shrink-0 text-slate-500"
-                />
+      {/* Import Modal */}
+      <ImportRepositoryModal
+        isOpen={modalOpen}
+        onClose={() => setModalOpen(false)}
+        onImport={handleImportUrl}
+        importing={importing}
+        error={error}
+      />
 
-                <input
-                  type="url"
-                  required
-                  value={githubUrl}
-                  onChange={(event) => setGithubUrl(event.target.value)}
-                  placeholder="https://github.com/owner/repository"
-                  className="w-full bg-transparent py-3 text-sm outline-none placeholder:text-slate-600"
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={importing}
-                className="rounded-lg bg-emerald-400 px-5 py-3 font-semibold text-slate-950 hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {importing ? 'Importing...' : 'Import repository'}
-              </button>
-            </form>
-          </section>
-
-          {/* AI analysis reports */}
-          <AnalysisReportsList
-            reports={analysisReports}
-            loading={reportsLoading}
-            reportLoadingId={reportLoadingId}
-            deletingReportId={deletingReportId}
-            onRefresh={loadAnalysisReports}
-            onViewReport={handleViewReport}
-            onDeleteReport={handleDeleteReport}
-          />
-
-          {/* Repository list */}
-          <RepositoryList
-            repositories={repositories}
-            loading={loading}
-            importing={importing}
-            analyzingId={analyzingId}
-            deletingRepositoryId={deletingRepositoryId}
-            indexingStatuses={indexingStatuses}
-            indexingId={indexingId}
-            onIndex={handleIndexRepository}
-            onAnalyze={handleAnalyze}
-            onChat={openRepositoryChat}
-            onDelete={handleDeleteRepository}
-            onRefresh={loadRepositories}
-          />
-
-          <p className="pb-4 text-center text-xs text-slate-600">
-            RepoInsight · AI-powered repository intelligence
-          </p>
-        </div>
-      </main>
-
-      {/* Repository code Q&A workspace */}
+      {/* Code Q&A Modal */}
       {chatRepository && (
         <RepositoryChatModal
           repository={chatRepository}
@@ -658,69 +576,16 @@ useEffect(() => {
         />
       )}
 
-      {/* Import repository modal */}
-      {modalOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
-          onClick={() => setModalOpen(false)}
-        >
-          <form
-            onSubmit={handleImport}
-            onClick={(event) => event.stopPropagation()}
-            className="w-full max-w-lg rounded-2xl border border-slate-700 bg-[#111b2e] p-6 shadow-2xl"
-          >
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold">
-                Import repository
-              </h3>
+      {/* Analysis Report Modal */}
+      <AnalysisReportModal
+        report={selectedReport}
+        onClose={() => setSelectedReport(null)}
+      />
 
-              <button
-                type="button"
-                onClick={() => setModalOpen(false)}
-                aria-label="Close dialog"
-                className="text-slate-400 hover:text-white"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <p className="mt-2 text-sm text-slate-400">
-              Enter the URL of a public GitHub repository.
-            </p>
-
-            <input
-              type="url"
-              required
-              value={githubUrl}
-              onChange={(event) => setGithubUrl(event.target.value)}
-              placeholder="https://github.com/owner/repository"
-              className="mt-5 w-full rounded-lg border border-slate-700 bg-[#0b1120] px-4 py-3 text-sm outline-none focus:border-emerald-400"
-            />
-
-            <div className="mt-5 flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setModalOpen(false)}
-                className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300"
-              >
-                Cancel
-              </button>
-
-              <button
-                type="submit"
-                disabled={importing}
-                className="rounded-lg bg-emerald-400 px-4 py-2 text-sm font-semibold text-slate-950 disabled:opacity-50"
-              >
-                {importing ? 'Importing...' : 'Import'}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
+      {/* Delete Confirmation Modal */}
       {pendingDeletion && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-xs"
           onClick={() => {
             if (deletingReportId === null && deletingRepositoryId === null) {
               setPendingDeletion(null);
@@ -730,72 +595,48 @@ useEffect(() => {
           <section
             role="dialog"
             aria-modal="true"
-            aria-labelledby="delete-report-title"
-            aria-describedby="delete-report-description"
-            onClick={(event) => event.stopPropagation()}
-            className="w-full max-w-md rounded-2xl border border-slate-700 bg-[#111b2e] p-6 shadow-2xl"
+            aria-labelledby="delete-dialog-title"
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md rounded-3xl border border-slate-700/80 bg-gradient-to-b from-[#131c2e] to-[#0d1424] p-6 shadow-2xl"
           >
             <div className="flex items-start gap-4">
-              <div className="rounded-xl bg-red-500/10 p-3 text-red-300">
+              <div className="rounded-2xl bg-red-500/10 p-3 text-red-400 border border-red-500/20">
                 <Trash2 size={22} />
               </div>
               <div>
-                <h3 id="delete-report-title" className="text-lg font-semibold">
-                  {pendingDeletion.type === 'analysis'
-                    ? 'Delete analysis report?'
-                    : 'Delete repository?'}
+                <h3 id="delete-dialog-title" className="text-base font-bold text-white">
+                  {pendingDeletion.type === 'analysis' ? 'Delete Analysis Report?' : 'Delete Repository?'}
                 </h3>
-                <p
-                  id="delete-report-description"
-                  className="mt-2 text-sm text-slate-400"
-                >
+                <p className="mt-2 text-xs leading-relaxed text-slate-400">
                   Are you sure you want to delete{' '}
-                  <span className="font-medium text-slate-200">
-                    {pendingDeletion.label}
-                  </span>
-                  ? This action cannot be undone.
+                  <span className="font-semibold text-slate-200">{pendingDeletion.label}</span>?
+                  This action cannot be undone.
                 </p>
               </div>
             </div>
 
-            <div className="mt-6 flex justify-end gap-3">
+            <div className="mt-6 flex justify-end gap-2.5">
               <button
                 type="button"
                 onClick={() => setPendingDeletion(null)}
-                disabled={
-                  deletingReportId !== null ||
-                  deletingRepositoryId !== null
-                }
-                className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={deletingReportId !== null || deletingRepositoryId !== null}
+                className="rounded-xl border border-slate-700 px-4 py-2 text-xs font-semibold text-slate-300 hover:bg-slate-800 disabled:opacity-50"
               >
                 No, keep it
               </button>
               <button
                 type="button"
                 onClick={confirmDeletion}
-                disabled={
-                  deletingReportId !== null ||
-                  deletingRepositoryId !== null
-                }
-                className="flex items-center gap-2 rounded-lg bg-red-500 px-4 py-2 text-sm font-semibold text-white hover:bg-red-400 disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={deletingReportId !== null || deletingRepositoryId !== null}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-red-500 px-4 py-2 text-xs font-bold text-white hover:bg-red-400 disabled:opacity-50"
               >
-                <Trash2 size={15} />
-                {deletingReportId !== null || deletingRepositoryId !== null
-                  ? 'Deleting...'
-                  : 'Yes, delete'}
+                <Trash2 size={14} />
+                {deletingReportId !== null || deletingRepositoryId !== null ? 'Deleting...' : 'Yes, delete'}
               </button>
             </div>
           </section>
         </div>
       )}
-
-      {/* Extracted analysis report component */}
-      <AnalysisReportModal
-        report={selectedReport}
-        onClose={() => setSelectedReport(null)}
-      />
     </div>
   );
 }
-
-export default App;
