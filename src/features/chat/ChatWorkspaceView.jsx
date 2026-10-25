@@ -36,6 +36,9 @@ export default function ChatWorkspaceView({
     ? String(indexingStatuses[selectedRepo.id]?.status || 'NOT_INDEXED').toUpperCase()
     : 'NOT_INDEXED';
   const isSelectedRepoReadyForQa = selectedRepoStatus === 'COMPLETED';
+  const isQuickIndex = String(
+    indexingStatuses[selectedRepo?.id]?.stage || ''
+  ).startsWith('Quick Q&A');
 
   return (
     <div className="space-y-6">
@@ -73,6 +76,9 @@ export default function ChatWorkspaceView({
                 const isSelected = selectedRepo?.id === repo.id;
                 const status = String(indexingStatuses[repo.id]?.status || 'NOT_INDEXED').toUpperCase();
                 const isIndexed = status === 'COMPLETED';
+                const isQuickIndex = String(
+                  indexingStatuses[repo.id]?.stage || ''
+                ).startsWith('Quick Q&A');
 
                 return (
                   <button
@@ -104,7 +110,7 @@ export default function ChatWorkspaceView({
                       }`}
                     >
                       {isIndexed
-                        ? 'Ready for Q&A'
+                        ? isQuickIndex ? 'Quick Q&A ready' : 'Ready for Q&A'
                         : status === 'IN_PROGRESS' || status === 'PENDING'
                         ? 'Preparing...'
                         : status === 'FAILED'
@@ -171,7 +177,9 @@ export default function ChatWorkspaceView({
 
                   <p className="mt-2 text-xs text-slate-400">
                     {selectedRepoStatus === 'COMPLETED'
-                      ? 'Code is ready. You can ask questions about its architecture and implementation.'
+                      ? isQuickIndex
+                        ? 'Quick Q&A is ready with a prioritized code sample. For other questions, the assistant can retrieve additional files from GitHub.'
+                        : 'Code is ready. You can ask questions about its architecture and implementation.'
                       : selectedRepoStatus === 'IN_PROGRESS' || selectedRepoStatus === 'PENDING'
                       ? 'Code is being prepared for Q&A in the background.'
                       : 'Prepare this codebase for Q&A before asking code questions.'}

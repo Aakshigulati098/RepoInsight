@@ -22,6 +22,8 @@ import {
   sendChatMessage,
 } from '../service/api.js';
 
+let pendingChatSequence = 0;
+
 function normalizeChat(chat) {
   const hasMessages = Array.isArray(chat.messages);
   return {
@@ -58,6 +60,10 @@ function renderMessageMarkdown(content) {
   const lines = String(content ?? '').split(/\r?\n/);
   const blocks = [];
   let listItems = [];
+  let numberedItems = [];
+  let paragraphLines = [];
+  let codeLines = null;
+  let codeLanguage = '';
 
   const flushList = () => {
     if (listItems.length) {
@@ -68,29 +74,99 @@ function renderMessageMarkdown(content) {
       );
       listItems = [];
     }
+    if (numberedItems.length) {
+      blocks.push(
+        <ol key={`numbered-list-${blocks.length}`} className="my-2 list-decimal space-y-1 pl-5">
+          {numberedItems.map((item, index) => <li key={index}>{renderInlineMarkdown(item)}</li>)}
+        </ol>
+      );
+      numberedItems = [];
+    }
+  };
+
+  const flushParagraph = () => {
+    if (!paragraphLines.length) return;
+    blocks.push(
+      <p key={`paragraph-${blocks.length}`} className="my-1">
+        {renderInlineMarkdown(paragraphLines.join(' '))}
+      </p>
+    );
+    paragraphLines = [];
+  };
+
+  const flushCode = () => {
+    blocks.push(
+      <div key={`code-${blocks.length}`} className="my-3 overflow-hidden rounded-lg border border-slate-700 bg-[#080e1b]">
+        {codeLanguage && (
+          <div className="border-b border-slate-700 px-3 py-1 text-[10px] uppercase tracking-wide text-slate-500">
+            {codeLanguage}
+          </div>
+        )}
+        <pre className="overflow-x-auto p-3 text-xs leading-5 text-emerald-100">
+          <code>{codeLines.join('\n')}</code>
+        </pre>
+      </div>
+    );
+    codeLines = null;
+    codeLanguage = '';
   };
 
   lines.forEach((line, index) => {
     const trimmed = line.trim();
+    if (codeLines !== null) {
+      if (trimmed.startsWith('```')) {
+        flushCode();
+      } else {
+        codeLines.push(line);
+      }
+      return;
+    }
+
+    if (trimmed.startsWith('```')) {
+      flushList();
+      flushParagraph();
+      codeLines = [];
+      codeLanguage = trimmed.slice(3).trim();
+      return;
+    }
+
     const bullet = trimmed.match(/^[-*]\s+(.+)$/);
     if (bullet) {
+      flushParagraph();
+      if (numberedItems.length) flushList();
       listItems.push(bullet[1]);
+      return;
+    }
+
+    const numbered = trimmed.match(/^\d+[.)]\s+(.+)$/);
+    if (numbered) {
+      flushParagraph();
+      if (listItems.length) flushList();
+      numberedItems.push(numbered[1]);
       return;
     }
 
     flushList();
     if (!trimmed) {
-      blocks.push(<div key={`space-${index}`} className="h-2" />);
+      flushParagraph();
+      if (blocks.length && index < lines.length - 1) {
+        blocks.push(<div key={`space-${index}`} className="h-1" />);
+      }
     } else if (trimmed.startsWith('### ')) {
+      flushParagraph();
       blocks.push(<h4 key={index} className="mt-3 font-semibold text-slate-100">{renderInlineMarkdown(trimmed.slice(4))}</h4>);
     } else if (trimmed.startsWith('## ')) {
+      flushParagraph();
       blocks.push(<h3 key={index} className="mt-3 font-semibold text-slate-100">{renderInlineMarkdown(trimmed.slice(3))}</h3>);
     } else if (trimmed.startsWith('# ')) {
+      flushParagraph();
       blocks.push(<h3 key={index} className="mt-3 text-base font-semibold text-slate-100">{renderInlineMarkdown(trimmed.slice(2))}</h3>);
     } else {
-      blocks.push(<p key={index} className="my-1">{renderInlineMarkdown(trimmed)}</p>);
+      paragraphLines.push(trimmed);
     }
   });
+  if (codeLines !== null) flushCode();
+  flushParagraph();
   flushList();
   return blocks;
 }
@@ -286,6 +362,7 @@ export default function RepositoryChatModal({ repository, onClose }) {
     setError('');
     setLoading(true);
 
+    let pendingChatId = null;
     try {
       let chatId = activeChatId;
       let result;
@@ -293,6 +370,14 @@ export default function RepositoryChatModal({ repository, onClose }) {
       if (activeChat) {
         result = await sendChatMessage(activeChat.id, prompt);
       } else {
+        pendingChatId = `pending-${++pendingChatSequence}`;
+        const pendingChat = normalizeChat({
+          id: pendingChatId,
+          title: prompt,
+          messages: [{ role: 'user', content: prompt }],
+        });
+        setChats((current) => [pendingChat, ...current]);
+        setActiveChatId(pendingChatId);
         result = await createRepositoryChat(repository.id, prompt);
         chatId = result?.id ?? result?.chatId;
         if (chatId == null) {
@@ -320,11 +405,20 @@ export default function RepositoryChatModal({ repository, onClose }) {
 
       setChats((current) => [
         updatedChat,
-        ...current.filter((chat) => String(chat.id) !== String(chatId)),
+        ...current.filter((chat) =>
+          String(chat.id) !== String(chatId)
+          && String(chat.id) !== String(pendingChatId)
+        ),
       ]);
       setActiveChatId(chatId);
       setQuestion('');
     } catch (err) {
+      if (pendingChatId != null) {
+        setChats((current) => current.filter(
+          (chat) => String(chat.id) !== String(pendingChatId)
+        ));
+        setActiveChatId(null);
+      }
       setError(err.message || 'Unable to ask a question about this repository.');
     } finally {
       setLoading(false);

@@ -58,8 +58,9 @@ export default function RepositoryCard({
   const progress = Math.max(0, Math.min(100, Number(indexingStatus?.progress || 0)));
   const isActiveIndexing = status === 'IN_PROGRESS' || status === 'PENDING' || isIndexing;
   const isReadyForQa = status === 'COMPLETED';
+  const isQuickIndex = String(indexingStatus?.stage || '').startsWith('Quick Q&A');
   const statusLabel = isReadyForQa
-    ? 'Ready for Q&A'
+    ? isQuickIndex ? 'Quick Q&A ready' : 'Ready for Q&A'
     : isActiveIndexing
     ? 'Preparing for Q&A'
     : status === 'FAILED'
@@ -208,7 +209,9 @@ export default function RepositoryCard({
                 : isActiveIndexing
                 ? indexingStatus?.stage || 'Preparing code for Q&A...'
                 : status === 'COMPLETED'
-                ? 'Ready for code Q&A'
+                ? isQuickIndex
+                  ? 'Quick setup complete; questions can also retrieve other files from GitHub'
+                  : 'Ready for code Q&A'
                 : 'Optimize code for Q&A to enable code chat'}
             </span>
             <span className="shrink-0 font-medium text-slate-400">
@@ -216,13 +219,11 @@ export default function RepositoryCard({
             </span>
           </div>
 
-          {isActiveIndexing && indexingStatus?.chunksIndexed > 0 && (
+          {isActiveIndexing && indexingStatus?.totalChunks > 0 && (
             <div className="mt-1 flex items-center gap-1.5 text-[10px] text-amber-300/80">
               <span>
-                {indexingStatus.chunksIndexed}
-                {indexingStatus.totalChunks > 0
-                  ? ` / ~${indexingStatus.totalChunks}`
-                  : ''} chunks optimized
+                {indexingStatus.chunksIndexed ?? 0}
+                {' / '}{indexingStatus.totalChunks} chunks processed
               </span>
             </div>
           )}

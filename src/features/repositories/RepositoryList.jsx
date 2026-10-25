@@ -396,8 +396,9 @@ export default function RepositoryList({
                   const avatar = repo.ownerAvatarUrl || (owner ? `https://github.com/${owner}.png` : null);
                   const indexing = indexingStatuses[repo.id] || {};
                   const status = String(indexing.status || 'NOT_INDEXED').toUpperCase();
+                  const isQuickIndex = String(indexing.stage || '').startsWith('Quick Q&A');
                   const statusLabel = status === 'COMPLETED'
-                    ? 'Ready for Q&A'
+                    ? isQuickIndex ? 'Quick Q&A ready' : 'Ready for Q&A'
                     : status === 'IN_PROGRESS' || status === 'PENDING'
                     ? 'Preparing for Q&A'
                     : status === 'FAILED'
