@@ -43,7 +43,8 @@ export default function AnalysisReportModal({ report, onClose }) {
     `Analysis report #${report.id ?? ''}`;
 
   const technologies = normalizeList(report.technologies);
-  const importantFiles = normalizeList(report.importantFiles);
+  const allImportantFiles = normalizeList(report.importantFiles);
+  const importantFiles = allImportantFiles.slice(0, 10);
   const sampleFiles = normalizeList(report.sampleFilePaths).slice(0, 8);
   const createdAt = report.createdAt || report.created_at;
 
@@ -153,7 +154,7 @@ export default function AnalysisReportModal({ report, onClose }) {
             />
           </ReportSection>
 
-          <ReportSection title="Important files">
+          <ReportSection title={`Important files${allImportantFiles.length > 10 ? ' (showing 10)' : ''}`}>
             <DataList items={importantFiles} />
           </ReportSection>
 
