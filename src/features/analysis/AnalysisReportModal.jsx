@@ -1,7 +1,9 @@
+import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import ReportSection from './ReportSection';
 import DataList from './DataList';
 import MermaidDiagram from './MermaidDiagram';
+import MarkdownContent from './MarkdownContent';
 
 function normalizeList(value) {
   if (Array.isArray(value)) return value;
@@ -32,6 +34,19 @@ function normalizeList(value) {
 }
 
 export default function AnalysisReportModal({ report, onClose }) {
+  const [summaryOpen, setSummaryOpen] = useState(false);
+
+  useEffect(() => {
+    if (!summaryOpen) return undefined;
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') setSummaryOpen(false);
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [summaryOpen]);
+
   if (!report) return null;
 
   const repository = report.repositoryInfo || report.repository || {};
@@ -47,6 +62,14 @@ export default function AnalysisReportModal({ report, onClose }) {
   const importantFiles = allImportantFiles.slice(0, 10);
   const sampleFiles = normalizeList(report.sampleFilePaths).slice(0, 8);
   const createdAt = report.createdAt || report.created_at;
+  const summaryUsesFallback = report.aiSummary
+    ?.includes('AI-generated summary is unavailable');
+  const diagramUsesFallback = report.architectureDiagram
+    ?.includes('AI architecture generation unavailable');
+  const summaryPreviewLimit = 560;
+  const summaryPreview = report.aiSummary?.length > summaryPreviewLimit
+    ? `${report.aiSummary.slice(0, summaryPreviewLimit).trimEnd()}...`
+    : report.aiSummary;
 
   return (
     <div
@@ -97,6 +120,12 @@ export default function AnalysisReportModal({ report, onClose }) {
             <p className="mt-2 text-lg font-semibold text-emerald-300">
               {report.status || 'Available'}
             </p>
+            {(summaryUsesFallback || diagramUsesFallback) && (
+              <p className="mt-2 text-xs leading-5 text-amber-300">
+                AI generation was unavailable for part of this report. The
+                displayed fallback uses GitHub repository metadata.
+              </p>
+            )}
           </div>
 
           <div className="rounded-xl border border-slate-800 bg-[#111b2e] p-4">
@@ -115,11 +144,20 @@ export default function AnalysisReportModal({ report, onClose }) {
         </div>
 
         <div className="space-y-5">
-          <ReportSection title="AI-generated summary">
+          <ReportSection title={summaryUsesFallback ? 'Repository evidence summary' : 'AI-generated summary'}>
             {report.aiSummary ? (
-              <p className="whitespace-pre-wrap text-sm leading-7 text-slate-300">
-                {report.aiSummary}
-              </p>
+              <>
+                <div className="max-h-56 overflow-hidden break-words [mask-image:linear-gradient(to_bottom,black_75%,transparent)]">
+                  <MarkdownContent content={summaryPreview} />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSummaryOpen(true)}
+                  className="mt-3 rounded-lg border border-emerald-400/30 bg-emerald-400/10 px-3 py-2 text-sm font-medium text-emerald-300 transition hover:bg-emerald-400/20 focus:outline-none focus:ring-2 focus:ring-emerald-300"
+                >
+                  View full summary
+                </button>
+              </>
             ) : (
               <p className="text-sm text-slate-500">
                 No AI summary is available in this report.
@@ -184,6 +222,54 @@ export default function AnalysisReportModal({ report, onClose }) {
           )}
         </div>
       </section>
+
+      {summaryOpen && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/85 p-4 sm:p-6"
+          onClick={() => setSummaryOpen(false)}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="summary-dialog-title"
+            className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-slate-700 bg-[#0b1120] shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <header className="flex items-start justify-between gap-4 border-b border-slate-800 px-5 py-4 sm:px-7">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-emerald-300">
+                  {summaryUsesFallback ? 'Repository evidence' : 'AI analysis'}
+                </p>
+                <h2
+                  id="summary-dialog-title"
+                  className="mt-1 text-xl font-semibold text-slate-100"
+                >
+                  {reportTitle} summary
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSummaryOpen(false)}
+                aria-label="Close summary"
+                className="rounded-lg border border-slate-700 p-2 text-slate-400 transition hover:text-white focus:outline-none focus:ring-2 focus:ring-emerald-300"
+              >
+                <X size={20} />
+              </button>
+            </header>
+            <div className="overflow-y-auto px-5 py-5 sm:px-7 sm:py-6">
+              {summaryUsesFallback && (
+                <p className="mb-4 rounded-lg border border-amber-400/20 bg-amber-400/5 p-3 text-sm text-amber-200">
+                  AI generation was unavailable. This summary contains
+                  repository evidence and metadata instead.
+                </p>
+              )}
+              <div className="break-words">
+                <MarkdownContent content={report.aiSummary} />
+              </div>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }
